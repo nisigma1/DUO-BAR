@@ -24,6 +24,29 @@ export function createConfigurationService(
     message: 'Kontrollo të dhënat e vendosura.',
   });
   return {
+    archiveProduct(input: unknown): MutationResult<string> {
+      const reject = (message: string): MutationResult<string> => ({
+        ok: false,
+        errors: { form: message },
+        message,
+      });
+      if (typeof input !== 'string' || !input.trim() || input.length > 200)
+        return reject('Produkti nuk është i vlefshëm.');
+      if (duo && input === COFFEE_STOCK_ID)
+        return reject('Espresso mban stokun e përbashkët të kafesë. Mund ta shënosh Joaktiv.');
+      return db
+        .transaction(() => {
+          const key = `archived_product:${input}`;
+          if (!db.prepare('SELECT 1 FROM settings WHERE key=?').get(key)) {
+            if (!find(input)) return reject('Produkti nuk u gjet.');
+            const now = new Date().toISOString();
+            db.prepare('INSERT INTO settings (key,value) VALUES (?,?)').run(key, now);
+            db.prepare('UPDATE products SET active=0,updated_at=? WHERE id=?').run(now, input);
+          }
+          return { ok: true, data: input } as const;
+        })
+        .immediate();
+    },
     updateBusinessName(input: unknown): MutationResult<Settings> {
       const invalid = (): MutationResult<Settings> => ({
         ok: false,

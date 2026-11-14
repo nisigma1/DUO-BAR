@@ -14,6 +14,7 @@ import { IPC, FINANCE_IPC, OPERATOR_IPC } from '../src/types/api';
 import { registerIpc } from '../electron/ipc/register';
 import { openDatabase } from '../electron/database/connection';
 import { createOrderService } from '../electron/database/orders';
+import { createConfigurationService } from '../electron/database/configuration';
 import { createRepositories } from '../electron/database/repositories';
 import { createCheckoutService } from '../electron/database/checkout';
 import { readShiftSales } from '../electron/database/duoReports';
@@ -138,7 +139,7 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
       registerIpc(
         { webContents: contents } as unknown as BrowserWindow,
         repo as never,
-        {} as never,
+        createConfigurationService(db, createRepositories(db)),
         { submitDraft } as never,
         checkout,
         {} as never,
@@ -161,6 +162,7 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
         operator: 'AM',
       });
       expect(call(IPC.tables)).toEqual([]);
+      expect(() => call(IPC.archiveProduct, 'UJE-1')).toThrow('nuk lejohet');
       expect(call(OPERATOR_IPC.catalog)).toMatchObject([{ purchaseCostCents: null }]);
       expect(() =>
         handlers.get(IPC.tables)!({ ...event, senderFrame: {} } as IpcMainInvokeEvent),
@@ -213,6 +215,7 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
       expect(call(OPERATOR_IPC.login, { id: 'OWNER', pin: ownerPin })).toMatchObject({
         operator: 'OWNER',
       });
+      expect(call(IPC.archiveProduct, 'UJE-1')).toMatchObject({ ok: true });
       expect(call(OPERATOR_IPC.report, 'DAY')).toMatchObject({ totalCents: 150 });
       expect(shiftReport).toHaveBeenCalledExactlyOnceWith('DAY');
     } finally {

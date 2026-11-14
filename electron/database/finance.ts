@@ -402,9 +402,9 @@ export function createFinanceService(
             }
             const p = db
               .prepare(
-                'SELECT p.name,p.purchase_cost_cents AS cost,p.track_inventory AS tracking,b.quantity FROM products p JOIN inventory_balances b ON b.product_id=p.id WHERE p.id=?',
+                'SELECT p.name,p.purchase_cost_cents AS cost,p.track_inventory AS tracking,b.quantity FROM products p JOIN inventory_balances b ON b.product_id=p.id WHERE p.id=? AND NOT EXISTS (SELECT 1 FROM settings s WHERE s.key=?)',
               )
-              .get(value.productId) as
+              .get(value.productId, `archived_product:${value.productId}`) as
               | {
                   name: string;
                   cost: number | null;

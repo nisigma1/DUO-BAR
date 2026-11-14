@@ -5,6 +5,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openDatabase } from '../electron/database/connection';
+import { createOrderService } from '../electron/database/orders';
+import { createCheckoutService } from '../electron/database/checkout';
+import { seed } from '../electron/database/seed';
 import { createRepositories } from '../electron/database/repositories';
 import { createConfigurationService } from '../electron/database/configuration';
 import {
@@ -110,6 +113,39 @@ describe('product configuration', () => {
     expect(service.updateProduct(null).ok).toBe(false);
     expect(service.updateProduct(update({ id: 'missing' })).ok).toBe(false);
     expect(validateProductUpdate(update())).toEqual({});
+  });
+  it('archives a product idempotently while preserving checkout and sales history', () => {
+    const { service, repositories, product } = context();
+    expect(
+      service.updateProduct(update({ trackInventory: false, sellingPriceCents: 150 })).ok,
+    ).toBe(true);
+    const orders = createOrderService(db, repositories);
+    const added = orders.addProduct({ tableId: 'M5', productId: product.id });
+    if (!added.ok || !added.data.order) throw Error('Could not prepare a test order');
+    const order = added.data.order;
+    expect(service.archiveProduct('missing').ok).toBe(false);
+    expect(service.archiveProduct({ id: product.id }).ok).toBe(false);
+    expect(service.archiveProduct(product.id)).toEqual({ ok: true, data: product.id });
+    expect(service.archiveProduct(product.id)).toEqual({ ok: true, data: product.id });
+    seed(db);
+    for (const forOrders of [false, true])
+      expect(repositories.listProducts(forOrders).some((p) => p.id === product.id)).toBe(false);
+    expect(service.updateProduct(update()).ok).toBe(false);
+    expect(orders.addProduct({ tableId: 'M5', productId: product.id }).ok).toBe(false);
+    expect(orders.incrementItem({ tableId: 'M5', itemId: order.items[0]!.id }).ok).toBe(false);
+    const checkout = createCheckoutService(db, orders);
+    expect(checkout.completeOrder({ orderId: order.id, expectedRevision: order.revision }).ok).toBe(
+      true,
+    );
+    expect(db.prepare('SELECT product_id FROM order_items').pluck().all()).toEqual([product.id]);
+    expect(db.prepare('SELECT amount_cents FROM cash_events').pluck().all()).toEqual([150]);
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  });
+  it('protects the shared coffee stock holder on DUO', () => {
+    const repositories = createRepositories(db, true);
+    const service = createConfigurationService(db, repositories, true);
+    expect(service.archiveProduct('KAFE-1').ok).toBe(false);
+    expect(repositories.listProducts().some((p) => p.id === 'KAFE-1')).toBe(true);
   });
   it('profit is unavailable unless both prices are configured', () => {
     expect(unitProfit({ sellingPriceCents: 120, purchaseCostCents: null })).toBeNull();

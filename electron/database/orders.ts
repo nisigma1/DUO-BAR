@@ -188,6 +188,11 @@ export function createOrderService(
       const line = view.order?.items.find((item) => item.id === targetId);
       if (!view.order || !line)
         throw new OrderError('Artikulli nuk i përket porosisë aktive të kësaj tavoline.');
+      if (
+        action === 'increment' &&
+        db.prepare("SELECT 1 FROM settings WHERE key='archived_product:' || ?").get(line.productId)
+      )
+        throw new OrderError('Produkti është hequr nga stoku.');
       const now = new Date().toISOString();
       const coffee = Boolean(duo && isCoffee(line.productId));
       const reserved = coffee

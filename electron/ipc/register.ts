@@ -297,6 +297,7 @@ export function registerIpc(
   };
   for (const [channel, handler] of [
     [IPC.updateProduct, configuration.updateProduct],
+    [IPC.archiveProduct, configuration.archiveProduct],
     [IPC.addSupply, configuration.addSupply],
     [IPC.addProduct, addToOrder],
     [IPC.incrementItem, orders.incrementItem],

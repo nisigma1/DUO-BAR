@@ -36,7 +36,9 @@ export function createRepositories(db: Database.Database, duo = false, duoMenu =
         p.track_inventory AS trackInventory,p.low_stock_threshold AS lowStockThreshold,p.active,
         p.created_at AS createdAt,p.updated_at AS updatedAt,b.quantity AS stockQuantity
         FROM products p JOIN categories c ON c.id=p.category_id
-        LEFT JOIN inventory_balances b ON b.product_id=p.id ORDER BY c.sort_order,p.rowid`,
+        LEFT JOIN inventory_balances b ON b.product_id=p.id
+        WHERE NOT EXISTS (SELECT 1 FROM settings s WHERE s.key='archived_product:' || p.id)
+        ORDER BY c.sort_order,p.rowid`,
         )
         .all() as (Omit<CatalogProduct, 'active' | 'trackInventory'> & {
         active: number;

@@ -14,10 +14,14 @@ import {
 import { Button, Field, SidePanel, StockBadge, useFieldErrorFocus } from '../common/Controls';
 export function ProductEditor({
   product,
+  canArchive,
   onClose,
   onSaved,
+  onArchived,
 }: {
   product: CatalogProduct;
+  canArchive: boolean;
+  onArchived: (id: string) => void;
   onClose: () => void;
   onSaved: (product: CatalogProduct) => void;
 }) {
@@ -34,6 +38,8 @@ export function ProductEditor({
   const [active, setActive] = useState(product.active);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [busy, setBusy] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [archiveError, setArchiveError] = useState('');
   const submitting = useRef(false);
   const clearError = (key: string) =>
     setErrors((current) => {
@@ -139,14 +145,74 @@ export function ProductEditor({
       setBusy(false);
     }
   }
+  async function archive() {
+    if (submitting.current) return;
+    submitting.current = true;
+    setArchiveError('');
+    setBusy(true);
+    try {
+      const result = await window.fox.products.archive(product.id);
+      if (result.ok) onArchived(result.data);
+      else setArchiveError(result.message);
+    } catch {
+      setArchiveError('Heqja nuk u konfirmua. Provo përsëri.');
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
+  if (confirmArchive) {
+    return (
+      <SidePanel
+        key="archive"
+        title="Hiq produktin?"
+        subtitle={product.name}
+        busy={busy}
+        onClose={() => setConfirmArchive(false)}
+        footer={
+          <>
+            <Button data-initial-focus onClick={() => setConfirmArchive(false)} disabled={busy}>
+              Anulo
+            </Button>
+            <Button data-confirm-product-removal variant="danger" onClick={archive} disabled={busy}>
+              {busy ? 'Duke hequr…' : 'Hiq produktin'}
+            </Button>
+          </>
+        }
+      >
+        <p>
+          Produkti hiqet nga Stoku dhe porositë e reja. Porositë e regjistruara dhe historiku ruhen.
+        </p>
+        {archiveError && (
+          <p role="alert" className="form-error">
+            {archiveError}
+          </p>
+        )}
+      </SidePanel>
+    );
+  }
   return (
     <SidePanel
+      key="edit"
       title="Edito produktin"
       subtitle={`${product.name} · ${product.categoryName} · ${product.active ? 'Aktiv' : 'Joaktiv'}`}
       busy={busy}
       onClose={onClose}
       footer={
         <>
+          {canArchive && (
+            <Button
+              data-remove-product
+              variant="danger"
+              onClick={() => {
+                setArchiveError('');
+                setConfirmArchive(true);
+              }}
+              disabled={busy}
+            >
+              Hiq produktin
+            </Button>
+          )}
           <Button onClick={onClose} disabled={busy}>
             Anulo
           </Button>

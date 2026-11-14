@@ -257,6 +257,17 @@ export function Inventory() {
       {editor && (
         <ProductEditor
           product={editor}
+          canArchive={!duo || editor.id !== COFFEE_STOCK_ID}
+          onArchived={(id) => {
+            if (
+              category &&
+              products.filter((p) => p.categoryId === category).every((p) => p.id === id)
+            )
+              setCategory('');
+            setData((current) => current?.filter((p) => p.id !== id));
+            setEditor(undefined);
+            setFeedback('Produkti u hoq.');
+          }}
           onClose={() => setEditor(undefined)}
           onSaved={(product) => onSaved(product, 'Produkti u ruajt.')}
         />

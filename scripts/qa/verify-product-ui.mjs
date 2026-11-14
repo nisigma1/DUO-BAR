@@ -413,6 +413,29 @@ try {
     lines: 21,
     paymentActionsVisible: true,
   };
+  // Use a product on the open order, so removing it cannot rely on deleting the database row.
+  await nav('inventory');
+  const openProduct = () => js('document.querySelector(".row-actions button").click()');
+  await openProduct();
+  await tap('[data-remove-product]');
+  await until('Boolean(document.querySelector("[data-confirm-product-removal]"))');
+  await tap('dialog[open] [data-initial-focus]');
+  await until('Boolean(document.querySelector("#product-form"))');
+  assert.ok(await api('return (await fox.products.list()).some(p=>p.id==="KAFE-1");'));
+  await tap('[data-remove-product]');
+  await tap('[data-confirm-product-removal]');
+  await until(
+    '!document.querySelector("dialog[open]") && document.querySelectorAll(".catalog tbody tr").length===20',
+  );
+  assert.equal(await api('return (await fox.products.list()).some(p=>p.id==="KAFE-1");'), false);
+  await nav('tables');
+  assert.equal(await js('Boolean(document.querySelector("[data-order-product=KAFE-1]"))'), false);
+  await until('document.querySelectorAll("[data-order-item]").length===21');
+  assert.equal(
+    await api('return (await fox.reports.getSalesReport("ALL")).summary.salesCents;'),
+    200,
+  );
+  result.checks.push('Product removal supports cancel and preserves recorded orders and sales');
   await command('HeapProfiler.collectGarbage');
   result.dom = await command('Memory.getDOMCounters');
   const logDirectory = path.join(directory, 'logs');

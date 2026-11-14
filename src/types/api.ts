@@ -114,6 +114,7 @@ export interface FoxApi {
   products: {
     list(): Promise<CatalogProduct[]>;
     update(input: ProductUpdate): Promise<MutationResult<CatalogProduct>>;
+    archive(id: string): Promise<MutationResult<string>>;
   };
   inventory: { addSupply(input: SupplyRequest): Promise<MutationResult<CatalogProduct>> };
   settings: {
@@ -151,6 +152,7 @@ export const IPC = {
   settings: 'fox:settings:get',
   reports: 'fox:reports:summary',
   updateProduct: 'fox:products:update',
+  archiveProduct: 'fox:products:archive',
   addSupply: 'fox:inventory:add-supply',
   getOrder: 'fox:orders:get-for-table',
   addProduct: 'fox:orders:add-product',

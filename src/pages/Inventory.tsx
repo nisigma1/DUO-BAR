@@ -62,7 +62,7 @@ export function Inventory() {
   const header = (
     <PageHeader
       title="Stoku"
-      helper="Produktet, Ã§mimet dhe stoku."
+      helper="Produktet, çmimet dhe stoku."
       actions={
         <>
           <Button variant="primary" onClick={() => setSupply(true)} disabled={!products}>
@@ -90,8 +90,8 @@ export function Inventory() {
         <div>
           <dt>Produkte</dt>
           <dd>{summary.total}</dd>
-          <small title="Blerja dhe Ã§mimi i shitjes janÃ« tÃ« dy tÃ« vendosur.">
-            Ã‡mime tÃ« plota (blerje + shitje): {summary.fullyPriced}
+          <small title="Blerja dhe çmimi i shitjes janë të dy të vendosur.">
+            Çmime të plota (blerje + shitje): {summary.fullyPriced}
           </small>
         </div>
         <div>
@@ -99,22 +99,22 @@ export function Inventory() {
           <dd>{summary.active}</dd>
         </div>
         <div>
-          <dt>Stok i ulÃ«t</dt>
+          <dt>Stok i ulët</dt>
           <dd>{summary.low}</dd>
         </div>
         <div>
           <dt>Vlera e mallit</dt>
           <dd className={summary.inventoryValueCents === null ? 'incomplete-value' : ''}>
             {summary.inventoryValueCents === null
-              ? 'Pa tÃ« dhÃ«na tÃ« plota'
+              ? 'Pa të dhëna të plota'
               : formatMoney(summary.inventoryValueCents)}
           </dd>
-          <small>Sipas Ã§mimit tÃ« blerjes</small>
+          <small>Sipas çmimit të blerjes</small>
         </div>
       </dl>
       {coffee && (
         <p className="notice">
-          Stoku i kafesÃ«:{' '}
+          Stoku i kafesë:{' '}
           <strong>
             {coffee.stockQuantity === null ? 'Pa vendosur' : coffeeStockLabel(coffee.stockQuantity)}
           </strong>
@@ -122,9 +122,9 @@ export function Inventory() {
       )}
       <div className="inventory-surface">
         <div className="inventory-toolbar">
-          <div className="category-filters" role="group" aria-label="Filtro sipas kategorisÃ«">
+          <div className="category-filters" role="group" aria-label="Filtro sipas kategorisë">
             <Button variant="ghost" onClick={() => setCategory('')} aria-pressed={category === ''}>
-              TÃ« gjitha
+              Të gjitha
             </Button>
             {categories.map((c) => (
               <Button
@@ -140,13 +140,13 @@ export function Inventory() {
           <div className="search-control">
             <Icon name="search" />
             <label className="sr-only" htmlFor="product-search">
-              KÃ«rko produkt
+              Kërko produkt
             </label>
             <input
               id="product-search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="KÃ«rko produkt..."
+              placeholder="Kërko produkt..."
               type="search"
             />
           </div>
@@ -163,7 +163,7 @@ export function Inventory() {
               </>
             )}
           </span>
-          <span>Â«â€”Â» = Pa vendosur</span>
+          <span>«—» = Pa vendosur</span>
         </div>
         {filtered.length ? (
           <div className="catalog-scroll">
@@ -175,7 +175,7 @@ export function Inventory() {
                   <th className="numeric">Stoku</th>
                   <th className="numeric">Blerja</th>
                   <th className="numeric">Shitja</th>
-                  <th className="numeric">Fitimi pÃ«r copÃ«</th>
+                  <th className="numeric">Fitimi për copë</th>
                   <th className="product-status">Statusi</th>
                   <th className="actions-heading">Veprime</th>
                 </tr>
@@ -195,7 +195,7 @@ export function Inventory() {
                       <td>{product.categoryName}</td>
                       <td className="stock-cell numeric">
                         {duo && isCoffee(product.id) && product.id !== COFFEE_STOCK_ID ? (
-                          'Stok i pÃ«rbashkÃ«t'
+                          'Stok i përbashkët'
                         ) : (
                           <>
                             {product.trackInventory === true && product.stockQuantity !== null && (
@@ -206,7 +206,7 @@ export function Inventory() {
                               </strong>
                             )}
                             {duoMenu && product.stockQuantity === null ? (
-                              <span>Pa numÃ«ruar</span>
+                              <span>Pa numëruar</span>
                             ) : (
                               state !== 'KNOWN' && <StockBadge state={state} />
                             )}
@@ -215,16 +215,16 @@ export function Inventory() {
                       </td>
                       <td className="numeric">
                         {product.purchaseCostCents === null
-                          ? 'â€”'
+                          ? '—'
                           : formatMoney(product.purchaseCostCents)}
                       </td>
                       <td className="numeric">
                         {product.sellingPriceCents === null
-                          ? 'Pa Ã§mim'
+                          ? 'Pa çmim'
                           : formatMoney(product.sellingPriceCents)}
                       </td>
                       <td className="numeric">
-                        {unitProfit(product) === null ? 'â€”' : formatMoney(unitProfit(product))}
+                        {unitProfit(product) === null ? '—' : formatMoney(unitProfit(product))}
                       </td>
                       <td className="product-status">{product.active ? 'Aktiv' : 'Joaktiv'}</td>
                       <td className="row-actions">
@@ -261,8 +261,8 @@ export function Inventory() {
           </div>
         ) : (
           <EmptyState
-            title="Nuk u gjet asnjÃ« produkt"
-            helper="Provo njÃ« emÃ«r tjetÃ«r ose ndrysho filtrin e kategorisÃ«."
+            title="Nuk u gjet asnjë produkt"
+            helper="Provo një emër tjetër ose ndrysho filtrin e kategorisë."
             icon="search"
           />
         )}
@@ -299,7 +299,7 @@ export function Inventory() {
           onClose={() => setLoss(false)}
           onSaved={() => {
             setLoss(false);
-            setFeedback('Humbja u regjistrua dhe stoku u pÃ«rditÃ«sua.');
+            setFeedback('Humbja u regjistrua dhe stoku u përditësua.');
             retry();
           }}
         />

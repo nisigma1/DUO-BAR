@@ -93,7 +93,7 @@ export function ProductEditor({
   const review = (key: string) =>
     warnings[key] && (
       <p id={`${key}-review`} className="price-review">
-        Kontrollo vlerÃ«n para ruajtjes â€” Ã§mimi duket i pazakontÃ«.
+        Kontrollo vlerën para ruajtjes — çmimi duket i pazakontë.
       </p>
     );
   async function save(event: React.FormEvent) {
@@ -111,7 +111,7 @@ export function ProductEditor({
         }
         return kind === 'money' ? parseEuro(value) : parseQuantity(value, true);
       } catch (error) {
-        nextErrors[key] = error instanceof Error ? error.message : 'Vlera nuk Ã«shtÃ« e vlefshme.';
+        nextErrors[key] = error instanceof Error ? error.message : 'Vlera nuk është e vlefshme.';
         return null;
       }
     };
@@ -140,7 +140,7 @@ export function ProductEditor({
     } catch (error) {
       console.error('FOX product save failed', error);
       setErrors({
-        form: 'Ruajtja nuk u konfirmua. Kontrollo produktin te Stoku para se ta provosh pÃ«rsÃ«ri.',
+        form: 'Ruajtja nuk u konfirmua. Kontrollo produktin te Stoku para se ta provosh përsëri.',
       });
     } finally {
       submitting.current = false;
@@ -157,7 +157,7 @@ export function ProductEditor({
       if (result.ok) onArchived(result.data);
       else setArchiveError(result.message);
     } catch {
-      setArchiveError('Heqja nuk u konfirmua. Provo pÃ«rsÃ«ri.');
+      setArchiveError('Heqja nuk u konfirmua. Provo përsëri.');
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -177,13 +177,13 @@ export function ProductEditor({
               Anulo
             </Button>
             <Button data-confirm-product-removal variant="danger" onClick={archive} disabled={busy}>
-              {busy ? 'Duke hequrâ€¦' : 'Hiq produktin'}
+              {busy ? 'Duke hequr…' : 'Hiq produktin'}
             </Button>
           </>
         }
       >
         <p>
-          Produkti hiqet nga Stoku dhe porositÃ« e reja. PorositÃ« e regjistruara dhe historiku ruhen.
+          Produkti hiqet nga Stoku dhe porositë e reja. Porositë e regjistruara dhe historiku ruhen.
         </p>
         {archiveError && (
           <p role="alert" className="form-error">
@@ -197,7 +197,7 @@ export function ProductEditor({
     <SidePanel
       key="edit"
       title="Edito produktin"
-      subtitle={`${product.name} Â· ${product.categoryName} Â· ${product.active ? 'Aktiv' : 'Joaktiv'}`}
+      subtitle={`${product.name} · ${product.categoryName} · ${product.active ? 'Aktiv' : 'Joaktiv'}`}
       busy={busy}
       onClose={onClose}
       footer={
@@ -219,7 +219,7 @@ export function ProductEditor({
             Anulo
           </Button>
           <Button variant="primary" type="submit" form="product-form" disabled={busy}>
-            {busy ? 'Duke ruajturâ€¦' : 'Ruaj ndryshimet'}
+            {busy ? 'Duke ruajtur…' : 'Ruaj ndryshimet'}
           </Button>
         </>
       }
@@ -281,11 +281,11 @@ export function ProductEditor({
             </div>
           </section>
           <section className="form-section" aria-labelledby="price-section">
-            <h3 id="price-section">Ã‡mimet</h3>
+            <h3 id="price-section">Çmimet</h3>
             <div className="form-columns">
               <Field
                 id="purchaseCostCents"
-                label="Ã‡mimi i blerjes (â‚¬)"
+                label="Çmimi i blerjes (€)"
                 error={errors.purchaseCostCents}
               >
                 <input
@@ -303,7 +303,7 @@ export function ProductEditor({
               </Field>
               <Field
                 id="sellingPriceCents"
-                label="Ã‡mimi i shitjes (â‚¬)"
+                label="Çmimi i shitjes (€)"
                 error={errors.sellingPriceCents}
               >
                 <input
@@ -320,11 +320,11 @@ export function ProductEditor({
                 {review('sellingPriceCents')}
               </Field>
             </div>
-            <p className="field-helper price-helper">LÃ«ri bosh Ã§mimet qÃ« nuk janÃ« vendosur.</p>
+            <p className="field-helper price-helper">Lëri bosh çmimet që nuk janë vendosur.</p>
             <div className="calculated-value">
-              <span>Fitimi pÃ«r copÃ«</span>
-              <output aria-live="polite" aria-label="Fitimi pÃ«r copÃ«">
-                {profit === null ? 'â€”' : formatMoney(profit)}
+              <span>Fitimi për copë</span>
+              <output aria-live="polite" aria-label="Fitimi për copë">
+                {profit === null ? '—' : formatMoney(profit)}
               </output>
             </div>
           </section>
@@ -375,10 +375,10 @@ export function ProductEditor({
             </div>
             <p className="field-helper">
               {tracking === ''
-                ? 'Zgjidh Po ose Jo pÃ«r tÃ« konfiguruar stokun.'
+                ? 'Zgjidh Po ose Jo për të konfiguruar stokun.'
                 : tracking === 'no'
                   ? 'Sasia nuk ulet pas shitjes.'
-                  : 'Njoftimi shfaqet kur stoku bie nÃ« kÃ«tÃ« sasi.'}
+                  : 'Njoftimi shfaqet kur stoku bie në këtë sasi.'}
             </p>
             <div className="current-stock">
               <span>Stoku tani</span>

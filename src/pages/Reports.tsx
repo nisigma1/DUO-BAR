@@ -25,7 +25,6 @@ const periods = [
   ['ALL', 'Të gjitha'],
   ['AM', 'Shitjet Paradite'],
   ['PM', 'Shitjet Masdite'],
-  ['DAY', 'Totali i Ditës'],
 ] as const;
 
 function ShiftReport({ period }: { period: ShiftPeriod }) {
@@ -55,7 +54,7 @@ function ShiftReport({ period }: { period: ShiftPeriod }) {
 
 export function Reports() {
   const session = useContext(OperatorContext);
-  const [shift, setShift] = useState<ShiftPeriod | null>(null);
+  const [shift, setShift] = useState<Exclude<ShiftPeriod, 'DAY'> | null>(null);
   const [choosingPeriod, setChoosingPeriod] = useState(false);
   const [query, setQuery] = useState<FinanceQuery>({ period: 'ALL' });
   const [tab, setTab] = useState<'overview' | 'expenses' | 'cash'>('overview');
@@ -103,7 +102,7 @@ export function Reports() {
                 aria-pressed={value === (shift ?? query.period)}
                 onClick={() => {
                   setChoosingPeriod(false);
-                  if (value === 'AM' || value === 'PM' || value === 'DAY') setShift(value);
+                  if (value === 'AM' || value === 'PM') setShift(value);
                   else {
                     setShift(null);
                     setQuery(

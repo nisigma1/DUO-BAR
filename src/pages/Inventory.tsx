@@ -18,7 +18,7 @@ export function Inventory() {
   const { data: products, error, retry, setData } = useData(load);
   const [category, setCategory] = useState<CategoryCode | ''>('');
   const [search, setSearch] = useState('');
-  const [editor, setEditor] = useState<CatalogProduct>();
+  const [editor, setEditor] = useState<{ product: CatalogProduct; archive: boolean }>();
   const [supply, setSupply] = useState(false);
   const [loss, setLoss] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -187,7 +187,7 @@ export function Inventory() {
                     <tr
                       key={product.id}
                       className={product.active ? '' : 'inactive-row'}
-                      onClick={() => setEditor(product)}
+                      onClick={() => setEditor({ product, archive: false })}
                     >
                       <td className="product-name">
                         {productDisplayName(product.name, duo || Boolean(duoMenu))}
@@ -233,12 +233,25 @@ export function Inventory() {
                           aria-label={`Edito ${productDisplayName(product.name, duo || Boolean(duoMenu))}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setEditor(product);
+                            setEditor({ product, archive: false });
                           }}
                         >
                           <Icon name="edit" />
                           Edito
                         </Button>
+                        {(!duo || product.id !== COFFEE_STOCK_ID) && (
+                          <Button
+                            data-remove-product-row={product.id}
+                            variant="danger"
+                            aria-label={`Hiq produktin ${productDisplayName(product.name, duo || Boolean(duoMenu))}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditor({ product, archive: true });
+                            }}
+                          >
+                            Hiq produktin
+                          </Button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -256,8 +269,9 @@ export function Inventory() {
       </div>
       {editor && (
         <ProductEditor
-          product={editor}
-          canArchive={!duo || editor.id !== COFFEE_STOCK_ID}
+          product={editor.product}
+          canArchive={!duo || editor.product.id !== COFFEE_STOCK_ID}
+          initiallyConfirmArchive={editor.archive}
           onArchived={(id) => {
             if (
               category &&

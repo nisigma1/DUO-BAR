@@ -15,12 +15,14 @@ import { Button, Field, SidePanel, StockBadge, useFieldErrorFocus } from '../com
 export function ProductEditor({
   product,
   canArchive,
+  initiallyConfirmArchive = false,
   onClose,
   onSaved,
   onArchived,
 }: {
   product: CatalogProduct;
   canArchive: boolean;
+  initiallyConfirmArchive?: boolean;
   onArchived: (id: string) => void;
   onClose: () => void;
   onSaved: (product: CatalogProduct) => void;
@@ -38,7 +40,7 @@ export function ProductEditor({
   const [active, setActive] = useState(product.active);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [busy, setBusy] = useState(false);
-  const [confirmArchive, setConfirmArchive] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(initiallyConfirmArchive && canArchive);
   const [archiveError, setArchiveError] = useState('');
   const submitting = useRef(false);
   const clearError = (key: string) =>

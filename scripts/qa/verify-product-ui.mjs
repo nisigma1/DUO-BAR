@@ -424,14 +424,32 @@ try {
   assert.ok(await api('return (await fox.products.list()).some(p=>p.id==="KAFE-1");'));
   await tap('dialog[open] [aria-label="Mbyll panelin"]');
   await until('!document.querySelector("dialog[open]")');
-  await tap('[data-remove-product-row="KAFE-1"]');
-  await until('Boolean(document.querySelector("[data-confirm-product-removal]"))');
-  assert.equal(await js('Boolean(document.querySelector("#product-form"))'), false);
-  await tap('dialog[open] [data-initial-focus]');
-  await until('Boolean(document.querySelector("#product-form"))');
-  assert.ok(await api('return (await fox.products.list()).some(p=>p.id==="KAFE-1");'));
-  await tap('dialog[open] [aria-label="Mbyll panelin"]');
-  await until('!document.querySelector("dialog[open]")');
+  const revealRemoval = () =>
+    js(
+      'document.querySelector(\'[data-remove-product-row="KAFE-1"]\').scrollIntoView({block:"center",inline:"nearest"})',
+    );
+  for (const [width, height, scale] of [
+    [1366, 768, 1],
+    [1093, 614, 1.25],
+    [910, 512, 1.5],
+  ]) {
+    await command('Emulation.setDeviceMetricsOverride', {
+      width,
+      height,
+      deviceScaleFactor: scale,
+      mobile: false,
+    });
+    await revealRemoval();
+    await tap('[data-remove-product-row="KAFE-1"]');
+    await until('Boolean(document.querySelector("[data-confirm-product-removal]"))');
+    assert.equal(await js('Boolean(document.querySelector("#product-form"))'), false);
+    await tap('dialog[open] [data-initial-focus]');
+    await until('Boolean(document.querySelector("#product-form"))');
+    assert.ok(await api('return (await fox.products.list()).some(p=>p.id==="KAFE-1");'));
+    await tap('dialog[open] [aria-label="Mbyll panelin"]');
+    await until('!document.querySelector("dialog[open]")');
+  }
+  await revealRemoval();
   await tap('[data-remove-product-row="KAFE-1"]');
   await tap('[data-confirm-product-removal]');
   await until(

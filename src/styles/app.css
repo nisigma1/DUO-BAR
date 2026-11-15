@@ -704,6 +704,20 @@ dd {
 .row-actions {
   text-align: right;
 }
+.catalog .row-actions,
+.catalog .actions-heading {
+  position: sticky;
+  right: 0;
+}
+.catalog .row-actions {
+  background: var(--surface);
+}
+.catalog .row-actions .button {
+  display: flex;
+  width: 100%;
+  margin-block: var(--space-half);
+  white-space: normal;
+}
 .row-actions .button {
   min-height: var(--control-row);
   padding: var(--space-1) var(--space-2);

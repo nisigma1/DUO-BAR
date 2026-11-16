@@ -80,6 +80,41 @@ function cash(countedCents = 0, openingCents = 0): CashInput {
   };
 }
 describe('owner finance and immutable daily control', () => {
+  it('starts a handover report at an exact instant while retaining history and cash', () => {
+    supply(50);
+    sell(900, 300);
+    expect(service().saveExpense(expense({ amountCents: 100, paidFromTill: true })).ok).toBe(true);
+    expect(service().recordLoss(loss(1)).ok).toBe(true);
+    vi.setSystemTime(new Date(now.getTime() + 1_000));
+    const period = { period: 'HANDOVER', handoverAt: new Date().toISOString() };
+    const priorCash = service().cashPreview({ openingCents: 0 });
+    expect(service().report(period)).toMatchObject({
+      sales: { summary: { salesCents: 0, expensesCents: 0, completedOrders: 0 } },
+      operatingResultCents: 0,
+      stockLossCents: 0,
+      expenseCount: 0,
+      lossCount: 0,
+    });
+    expect(service().cashPreview({ openingCents: 0 })).toEqual(priorCash);
+
+    vi.setSystemTime(new Date(now.getTime() + 2_000));
+    sell(600, 200);
+    // The time selected in the expense form can be rounded to the minute.
+    expect(service().saveExpense(expense({ amountCents: 75 })).ok).toBe(true);
+    expect(service().recordLoss(loss(1)).ok).toBe(true);
+    expect(service().report(period)).toMatchObject({
+      sales: { summary: { salesCents: 600, expensesCents: 75, completedOrders: 1 } },
+      operatingResultCents: 275,
+      stockLossCents: 50,
+      expenseCount: 1,
+      lossCount: 1,
+    });
+    expect(all()).toMatchObject({
+      sales: { summary: { salesCents: 1500, expensesCents: 175, completedOrders: 2 } },
+      operatingResultCents: 725,
+      stockLossCents: 100,
+    });
+  });
   it('passes exact phase9 acceptance with explicit till-paid expenses', () => {
     sell();
     service().saveExpense(expense({ amountCents: 22000, paidFromTill: true }));

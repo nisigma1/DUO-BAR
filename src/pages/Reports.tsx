@@ -3,7 +3,7 @@ import { profitPresentation } from '../presentation/profit';
 import { LocalDateInput } from '../components/common/LocalDateInput';
 import { tableDisplayCode } from '../presentation/tableIdentity';
 import { Fragment, useCallback, useContext, useState } from 'react';
-import { localDate, type FinanceQuery } from '../domain/finance';
+import { localDate, validHandover, type FinanceQuery } from '../domain/finance';
 import { CashControl, ExpenseList, LossHistory } from '../components/finance/OwnerFinance';
 import { useData } from '../app/useData';
 
@@ -16,6 +16,17 @@ import { Button, EmptyState, Icon, PageHeader, SidePanel } from '../components/c
 import { ReceiptActions } from '../components/receipts/ReceiptActions';
 import { OperatorContext } from '../app/operatorContext';
 import { OPERATORS, type ShiftPeriod } from '../domain/operators';
+
+const handoverPreference = 'duo:report-handover-at';
+
+function initialReportQuery(duoOwner: boolean): FinanceQuery {
+  if (duoOwner) {
+    const handoverAt = localStorage.getItem(handoverPreference);
+    if (validHandover(handoverAt) && handoverAt <= new Date().toISOString())
+      return { period: 'HANDOVER', handoverAt };
+  }
+  return { period: 'ALL' };
+}
 
 const periods = [
   ['TODAY', 'Sot'],
@@ -56,7 +67,11 @@ export function Reports() {
   const session = useContext(OperatorContext);
   const [shift, setShift] = useState<Exclude<ShiftPeriod, 'DAY'> | null>(null);
   const [choosingPeriod, setChoosingPeriod] = useState(false);
-  const [query, setQuery] = useState<FinanceQuery>({ period: 'ALL' });
+  const duoOwner = session.required && session.operator === 'OWNER';
+  const [query, setQuery] = useState(() => initialReportQuery(duoOwner));
+  const [handoverAt, setHandoverAt] = useState(query.handoverAt);
+  const [confirmHandover, setConfirmHandover] = useState(false);
+  const [handoverError, setHandoverError] = useState(false);
   const [tab, setTab] = useState<'overview' | 'expenses' | 'cash'>('overview');
   const [startDate, setStartDate] = useState(localDate()),
     [endDate, setEndDate] = useState(localDate());
@@ -81,7 +96,9 @@ export function Reports() {
             <span>Periudha</span>
             <Button aria-haspopup="dialog" onClick={() => setChoosingPeriod(true)}>
               <Icon name="calendar" />
-              {periods.find(([value]) => value === (shift ?? query.period))?.[1]}
+              {query.period === 'HANDOVER' && !shift
+                ? 'Nga dorëzimi'
+                : periods.find(([value]) => value === (shift ?? query.period))?.[1]}
             </Button>
           </div>
         }
@@ -91,7 +108,11 @@ export function Reports() {
           title="Periudha e raportit"
           subtitle=""
           busy={false}
-          onClose={() => setChoosingPeriod(false)}
+          onClose={() => {
+            setChoosingPeriod(false);
+            setConfirmHandover(false);
+            setHandoverError(false);
+          }}
           footer={null}
         >
           <div className="report-period-options">
@@ -102,6 +123,8 @@ export function Reports() {
                 aria-pressed={value === (shift ?? query.period)}
                 onClick={() => {
                   setChoosingPeriod(false);
+                  setConfirmHandover(false);
+                  setHandoverError(false);
                   if (value === 'AM' || value === 'PM') setShift(value);
                   else {
                     setShift(null);
@@ -116,6 +139,54 @@ export function Reports() {
                 {label}
               </Button>
             ))}
+            {duoOwner && handoverAt && (
+              <Button
+                aria-pressed={query.period === 'HANDOVER' && !shift}
+                onClick={() => {
+                  setShift(null);
+                  setQuery({ period: 'HANDOVER', handoverAt });
+                  setChoosingPeriod(false);
+                  setConfirmHandover(false);
+                  setHandoverError(false);
+                }}
+              >
+                Nga dorëzimi
+              </Button>
+            )}
+            {duoOwner &&
+              (confirmHandover ? (
+                <>
+                  <p>
+                    Raportet do të numërojnë aktivitetin nga ky moment. Historiku shihet te Të
+                    gjitha.
+                  </p>
+                  <Button onClick={() => setConfirmHandover(false)}>Anulo</Button>
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      const start = new Date().toISOString();
+                      try {
+                        localStorage.setItem(handoverPreference, start);
+                      } catch {
+                        setHandoverError(true);
+                        return;
+                      }
+                      setHandoverAt(start);
+                      setQuery({ period: 'HANDOVER', handoverAt: start });
+                      setShift(null);
+                      setTab('overview');
+                      setConfirmHandover(false);
+                      setHandoverError(false);
+                      setChoosingPeriod(false);
+                    }}
+                  >
+                    Konfirmo nisjen
+                  </Button>
+                  {handoverError && <p role="alert">Fillimi i raportimit nuk u ruajt.</p>}
+                </>
+              ) : (
+                <Button onClick={() => setConfirmHandover(true)}>Nis raportet nga tani</Button>
+              ))}
           </div>
         </SidePanel>
       )}

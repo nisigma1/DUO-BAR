@@ -37,7 +37,7 @@ export function readSalesReport(
 function readSalesReportInBounds(
   db: Database.Database,
   period: ReportPeriod | FinanceQuery,
-  bounds: { start: string; end: string },
+  bounds: { start: string; end: string; handoverAt?: string },
 ): SalesReport {
   return db.transaction(() => {
     // A full-history range does not benefit from random date-index traversal.
@@ -76,7 +76,7 @@ function readSalesReportInBounds(
     };
     const expenseStart = bounds.start === '' ? '' : localDate(bounds.start);
     const expenseEnd = bounds.end === '9999' ? '9999' : localDate(bounds.end);
-    const expense = expenseTotals(db, expenseStart, expenseEnd);
+    const expense = expenseTotals(db, expenseStart, expenseEnd, bounds.handoverAt);
     for (const value of [...Object.values(totals), expense.total])
       if (!Number.isSafeInteger(value)) throw new Error('Unsafe report aggregate');
     const cost = totals.unknownCost ? null : totals.cost;

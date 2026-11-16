@@ -20,7 +20,7 @@ import {
 import type { MutationResult } from '../../src/domain/configuration';
 import { readSalesReport } from './salesReports';
 import { COFFEE_STOCK_ID, coffeePortions, isCoffee } from '../../src/domain/operators';
-import { effectiveExpenses, mapExpense, safeMoney } from './financeQueries';
+import { effectiveExpenses, expenseRange, mapExpense, safeMoney } from './financeQueries';
 import { logError } from '../main/logging';
 import { exactQuantity, exactQuantityCost, assertCashTotals } from './numericSafety';
 import {
@@ -157,13 +157,19 @@ export function createFinanceService(
   return {
     report(input: unknown): FinanceReport {
       return db.transaction(() => {
-        const b = financeBounds(input, clock()),
-          sales = readSalesReport(db, input, clock());
+        const now = clock();
+        const b = financeBounds(input, now);
+        const sales = readSalesReport(db, input, now);
+        const bounds = [b.startDate, b.endDateExclusive, ...(b.handoverAt ? [b.handoverAt] : [])];
+        const expenseBounds = b.handoverAt ? [b.handoverAt] : bounds;
+        const lossRange =
+          'business_date>=? AND business_date<?' + (b.handoverAt ? ' AND occurred_at>=?' : '');
+        const cashBounds = b.handoverAt ? ['', '9999'] : [b.startDate, b.endDateExclusive];
         const loss = db
           .prepare(
-            'SELECT COALESCE(SUM(total_cost_cents),0) AS known,COUNT(CASE WHEN total_cost_cents IS NULL THEN 1 END) AS missing,COUNT(*) AS count FROM stock_losses WHERE business_date>=? AND business_date<?',
+            `SELECT COALESCE(SUM(total_cost_cents),0) AS known,COUNT(CASE WHEN total_cost_cents IS NULL THEN 1 END) AS missing,COUNT(*) AS count FROM stock_losses WHERE ${lossRange}`,
           )
-          .get(b.startDate, b.endDateExclusive) as {
+          .get(...bounds) as {
           known: number;
           missing: number;
           count: number;
@@ -180,34 +186,34 @@ export function createFinanceService(
         const expenses = (
           db
             .prepare(
-              `SELECT * FROM (${effectiveExpenses}) WHERE expenseDate>=? AND expenseDate<? ORDER BY expenseDate DESC,occurredAt DESC,id LIMIT 100`,
+              `SELECT * FROM (${effectiveExpenses}) WHERE ${expenseRange(b.handoverAt)} ORDER BY expenseDate DESC,occurredAt DESC,id LIMIT 100`,
             )
-            .all(b.startDate, b.endDateExclusive) as ExpenseRecord[]
+            .all(...expenseBounds) as ExpenseRecord[]
         ).map(mapExpense);
         const expenseCount = (
           db
             .prepare(
-              `SELECT COUNT(*) AS n FROM (${effectiveExpenses}) WHERE expenseDate>=? AND expenseDate<?`,
+              `SELECT COUNT(*) AS n FROM (${effectiveExpenses}) WHERE ${expenseRange(b.handoverAt)}`,
             )
-            .get(b.startDate, b.endDateExclusive) as { n: number }
+            .get(...expenseBounds) as { n: number }
         ).n;
         const closes = db
           .prepare(
             `${cashSelect} WHERE business_date>=? AND business_date<? ORDER BY business_date DESC,created_at DESC,rowid DESC LIMIT 100`,
           )
-          .all(b.startDate, b.endDateExclusive) as CashClose[];
+          .all(...cashBounds) as CashClose[];
         const closeCount = (
           db
             .prepare(
               'SELECT COUNT(*) AS n FROM cash_closes WHERE business_date>=? AND business_date<?',
             )
-            .get(b.startDate, b.endDateExclusive) as { n: number }
+            .get(...cashBounds) as { n: number }
         ).n;
         const expenseCategories = db
           .prepare(
-            `SELECT category,SUM(amountCents) AS amountCents FROM (${effectiveExpenses}) WHERE expenseDate>=? AND expenseDate<? GROUP BY category`,
+            `SELECT category,SUM(amountCents) AS amountCents FROM (${effectiveExpenses}) WHERE ${expenseRange(b.handoverAt)} GROUP BY category`,
           )
-          .all(b.startDate, b.endDateExclusive) as FinanceReport['expenseCategories'];
+          .all(...expenseBounds) as FinanceReport['expenseCategories'];
         for (const e of expenseCategories) safeMoney(e.amountCents);
         return {
           expenseCategories,
@@ -225,10 +231,8 @@ export function createFinanceService(
           closes,
           closeCount,
           losses: db
-            .prepare(
-              `${lossSelect} WHERE business_date>=? AND business_date<? ORDER BY occurred_at DESC,id LIMIT 100`,
-            )
-            .all(b.startDate, b.endDateExclusive) as LossRecord[],
+            .prepare(`${lossSelect} WHERE ${lossRange} ORDER BY occurred_at DESC,id LIMIT 100`)
+            .all(...bounds) as LossRecord[],
           startDate: b.startDate,
           endDate: b.endDate,
         };

@@ -13,18 +13,31 @@ export function safeMoney(value: number | bigint): number {
   if (!Number.isSafeInteger(n)) throw Error('Shuma tejkalon kufirin e lejuar.');
   return n;
 }
-export function expenseTotals(db: Database.Database, startDate: string, endDate: string) {
+export function expenseRange(handoverAt?: string) {
+  return handoverAt
+    ? 'id IN (SELECT id FROM expenses WHERE created_at>=?)'
+    : 'expenseDate>=? AND expenseDate<?';
+}
+export function expenseTotals(
+  db: Database.Database,
+  startDate: string,
+  endDate: string,
+  handoverAt?: string,
+) {
   const current = !!db
     .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='expense_revisions'")
     .get();
   const source = current
     ? effectiveExpenses
-    : 'SELECT amount_cents AS amountCents,0 AS paidFromTill,expense_date AS expenseDate FROM expenses';
+    : 'SELECT id,amount_cents AS amountCents,0 AS paidFromTill,expense_date AS expenseDate FROM expenses';
   const r = db
     .prepare(
-      `SELECT COALESCE(SUM(amountCents),0) AS total,COALESCE(SUM(CASE WHEN paidFromTill=1 THEN amountCents ELSE 0 END),0) AS cash FROM (${source}) WHERE expenseDate>=? AND expenseDate<?`,
+      `SELECT COALESCE(SUM(amountCents),0) AS total,COALESCE(SUM(CASE WHEN paidFromTill=1 THEN amountCents ELSE 0 END),0) AS cash FROM (${source}) WHERE ${expenseRange(handoverAt)}`,
     )
-    .get(startDate, endDate) as { total: number; cash: number };
+    .get(...(handoverAt ? [handoverAt] : [startDate, endDate])) as {
+    total: number;
+    cash: number;
+  };
   safeMoney(r.total);
   safeMoney(r.cash);
   return r;

@@ -19,11 +19,12 @@ export const LOSS_REASONS = {
 } as const;
 export type ExpenseCategory = keyof typeof EXPENSE_CATEGORIES;
 export type LossReason = keyof typeof LOSS_REASONS;
-export type FinancePeriod = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL';
+export type FinancePeriod = 'TODAY' | 'WEEK' | 'MONTH' | 'CUSTOM' | 'ALL' | 'HANDOVER';
 export interface FinanceQuery {
   period: FinancePeriod;
   startDate?: string;
   endDate?: string;
+  handoverAt?: string;
 }
 export interface ExpenseInput {
   requestId: string;
@@ -172,10 +173,35 @@ export function dateBounds(startDate: string, endDate: string) {
     endDateExclusive: localDate(end),
   };
 }
-export function financeBounds(input: unknown, now = new Date()) {
+export function validHandover(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length !== 24) return false;
+  const date = new Date(value);
+  return (
+    Number.isFinite(date.getTime()) && date.toISOString() === value && validDate(localDate(date))
+  );
+}
+export function financeBounds(
+  input: unknown,
+  now = new Date(),
+): ReturnType<typeof dateBounds> & { handoverAt?: string } {
   if (!input || typeof input !== 'object' || Array.isArray(input))
     throw Error('Periudha nuk është e vlefshme.');
   const q = input as Record<string, unknown>;
+  if (
+    q.period === 'HANDOVER' &&
+    Object.keys(q).length === 2 &&
+    validHandover(q.handoverAt) &&
+    q.handoverAt <= now.toISOString()
+  ) {
+    return {
+      start: q.handoverAt,
+      end: '9999',
+      startDate: localDate(new Date(q.handoverAt)),
+      endDate: localDate(now),
+      endDateExclusive: '9999',
+      handoverAt: q.handoverAt,
+    };
+  }
   if (Object.keys(q).some((k) => !['period', 'startDate', 'endDate'].includes(k)))
     throw Error('Periudha nuk është e vlefshme.');
   if (q.period === 'ALL')

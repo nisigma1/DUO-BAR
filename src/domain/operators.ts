@@ -37,6 +37,6 @@ export function coffeeStockLabel(portions: number) {
     ) +
     ' kg · ' +
     Math.floor(portions) +
-    ' porcione'
+    ' kafe'
   );
 }

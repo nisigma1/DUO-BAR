@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import {
+  canSupplyProduct,
   validateProductUpdate,
   validateSupply,
   type MutationResult,
@@ -9,13 +10,11 @@ import {
 import type { CatalogProduct, Settings } from '../../src/domain/types';
 import type { createRepositories } from './repositories';
 import { COFFEE_STOCK_ID, coffeePortions, isCoffee } from '../../src/domain/operators';
-import { isDuoMenuProduct } from './duoCatalog';
 import { exactQuantity, assertCashTotals } from './numericSafety';
 export function createConfigurationService(
   db: Database.Database,
   repositories: ReturnType<typeof createRepositories>,
   duo = false,
-  duoMenu = false,
 ) {
   const find = (id: string) => repositories.listProducts().find((product) => product.id === id);
   const failure = (errors: Record<string, string>): MutationResult<CatalogProduct> => ({
@@ -144,16 +143,25 @@ export function createConfigurationService(
               });
             return { ok: true, data: product } as const;
           }
-          if (!product.active) return failure({ productId: 'Aktivizo produktin para furnizimit.' });
-          const firstCount =
-            duoMenu &&
-            isDuoMenuProduct(product.id) &&
-            product.trackInventory === false &&
-            product.stockQuantity === null;
-          if (product.trackInventory !== true && !firstCount)
+          if (!canSupplyProduct(product, duo)) {
             return failure({
-              productId: 'Aktivizo ndjekjen e stokut te produkti para furnizimit.',
+              productId: product.active
+                ? 'Aktivizo ndjekjen e stokut te produkti para furnizimit.'
+                : 'Aktivizo produktin para furnizimit.',
             });
+          }
+          const firstCount =
+            duo && product.trackInventory !== true && product.stockQuantity === null;
+          // Starting tracking while a bill contains this product could charge
+          // already served items against the newly counted stock.
+          const startTracking =
+            firstCount &&
+            !db
+              .prepare(
+                `SELECT 1 FROM orders o JOIN order_items i ON i.order_id=o.id
+               WHERE o.status='OPEN' AND i.product_id=? LIMIT 1`,
+              )
+              .get(product.id);
           let quantity: number;
           try {
             quantity = exactQuantity(product.stockQuantity ?? 0, incoming);
@@ -183,7 +191,7 @@ export function createConfigurationService(
             .prepare('UPDATE inventory_balances SET quantity=?,updated_at=? WHERE product_id=?')
             .run(quantity, now, product.id);
           if (result.changes !== 1) throw new Error('Inventory balance is missing');
-          if (firstCount)
+          if (startTracking)
             db.prepare('UPDATE products SET track_inventory=1,updated_at=? WHERE id=?').run(
               now,
               product.id,

@@ -2,35 +2,39 @@ import { amountError } from '../../domain/operatorInput';
 import { useContext, useRef, useState } from 'react';
 import type { CatalogProduct } from '../../domain/types';
 import { parseEuro } from '../../domain/money';
-import { parseQuantity, type FieldErrors } from '../../domain/configuration';
-import { Button, EmptyState, Field, SidePanel, useFieldErrorFocus } from '../common/Controls';
-import { OperatorContext } from '../../app/operatorContext';
+import { productDisplayName } from '../../domain/display';
 import {
-  COFFEE_STOCK_ID,
-  coffeePortions,
-  coffeeStockLabel,
-  isCoffee,
-} from '../../domain/operators';
-export function SupplyPanel({
-  products,
-  onClose,
-  onSaved,
-}: {
-  products: CatalogProduct[];
+  canSupplyProduct,
+  parseQuantity,
+  type FieldErrors,
+  type SupplyProduct,
+} from '../../domain/configuration';
+import { Button, EmptyState, Field, SidePanel, useFieldErrorFocus } from '../common/Controls';
+import { DataState } from '../common/DataState';
+import { OperatorContext } from '../../app/operatorContext';
+import { useData } from '../../app/useData';
+import { COFFEE_STOCK_ID, coffeePortions, coffeeStockLabel } from '../../domain/operators';
+
+type SupplyActions = {
   onClose: () => void;
   onSaved: (product: CatalogProduct) => void;
-}) {
-  const { required: duo, duoMenu } = useContext(OperatorContext);
-  const eligible = products.filter(
-    (p) =>
-      p.active &&
-      (p.trackInventory === true ||
-        (duoMenu &&
-          p.id !== COFFEE_STOCK_ID &&
-          p.trackInventory === false &&
-          p.stockQuantity === null)) &&
-      (!duo || !isCoffee(p.id) || p.id === COFFEE_STOCK_ID),
-  );
+};
+type SupplyProducts =
+  | { products: SupplyProduct[] }
+  | { products: undefined; error: boolean; retry: () => void };
+const loadSupplyProducts = () => window.fox.inventory.supplyProducts();
+
+export function StaffSupplyPanel(props: SupplyActions) {
+  const { data, error, retry } = useData(loadSupplyProducts);
+  const catalog = data ? { products: data } : { products: undefined, error, retry };
+  return <SupplyPanel {...props} {...catalog} />;
+}
+
+export function SupplyPanel(props: SupplyActions & SupplyProducts) {
+  const { products, onClose, onSaved } = props;
+  const { required: duo, duoMenu, operator } = useContext(OperatorContext);
+  const allowDrawerPayment = !duo || operator === 'OWNER';
+  const eligible = products?.filter((product) => canSupplyProduct(product, duo)) ?? [];
   const [productId, setProductId] = useState('');
   const [drawer, setDrawer] = useState(false),
     [paid, setPaid] = useState('');
@@ -48,6 +52,10 @@ export function SupplyPanel({
     });
   const selected = eligible.find((p) => p.id === productId);
   const coffee = duo && selected?.id === COFFEE_STOCK_ID;
+  const displayName = (product: SupplyProduct) =>
+    duo && product.id === COFFEE_STOCK_ID
+      ? 'Kafe (stok i përbashkët)'
+      : productDisplayName(product.name, duo || Boolean(duoMenu));
   useFieldErrorFocus(errors, busy, 'supply-form');
   let amountPreview: number | null = null;
   try {
@@ -128,10 +136,16 @@ export function SupplyPanel({
         </>
       }
     >
-      {!eligible.length ? (
+      {!props.products ? (
+        <DataState error={props.error} retry={props.retry} />
+      ) : !eligible.length ? (
         <EmptyState
-          title="Nuk ka produkte me stok aktiv"
-          helper="Te Edito produktin, zgjidh një produkt aktiv dhe vendos Mbaj stok?: Po."
+          title={duo ? 'Nuk ka produkte për furnizim' : 'Nuk ka produkte me stok aktiv'}
+          helper={
+            duo
+              ? 'Lista e produkteve është bosh.'
+              : 'Hap Edito produktin dhe vendos «Mbaj stok?» në «Po».'
+          }
         />
       ) : (
         <form id="supply-form" onSubmit={save} noValidate>
@@ -156,20 +170,21 @@ export function SupplyPanel({
                 <option value="">Zgjidh produktin</option>
                 {eligible.map((p) => (
                   <option value={p.id} key={p.id}>
-                    {duo && p.id === COFFEE_STOCK_ID ? 'Kafe (stok i përbashkët)' : p.name}
+                    {displayName(p)}
+                    {!p.active && ' · Joaktiv'}
                   </option>
                 ))}
               </select>
             </Field>
-            {duoMenu && selected?.trackInventory === false && (
-              <p className="field-helper">
-                Shkruaj sasinë e numëruar. Stoku fillon të ndiqet pas ruajtjes.
-              </p>
-            )}
-            <Field id="quantity" label={coffee ? 'Sasia (kg)' : 'Sasia'} error={errors.quantity}>
+            <Field
+              id="quantity"
+              label={coffee ? 'Sasia (kg)' : duo ? 'Sasia (copë)' : 'Sasia'}
+              error={errors.quantity}
+            >
               <input
                 id="quantity"
                 inputMode="decimal"
+                placeholder={duo ? (coffee ? 'p.sh. 0,5' : 'p.sh. 24') : undefined}
                 value={quantity}
                 onChange={(e) => {
                   setQuantity(e.target.value);
@@ -179,34 +194,50 @@ export function SupplyPanel({
                 aria-describedby={errors.quantity ? 'quantity-error' : undefined}
               />
             </Field>
-            <label className="finance-check">
-              <input
-                type="checkbox"
-                checked={drawer}
-                onChange={(e) => setDrawer(e.target.checked)}
-              />
-              Paguar nga arka
-            </label>
-            {drawer && (
-              <Field id="supply-paid" label="Shuma e paguar (€)" error={errors.drawerPaymentCents}>
-                <input
-                  id="supply-paid"
-                  inputMode="decimal"
-                  value={paid}
-                  onChange={(e) => setPaid(e.target.value)}
-                />
-              </Field>
+            {allowDrawerPayment && (
+              <>
+                <label className="finance-check">
+                  <input
+                    type="checkbox"
+                    checked={drawer}
+                    onChange={(e) => {
+                      setDrawer(e.target.checked);
+                      clearError('drawerPaymentCents');
+                    }}
+                  />
+                  Paguar nga arka
+                </label>
+                {drawer && (
+                  <Field
+                    id="supply-paid"
+                    label="Shuma e paguar (€)"
+                    error={errors.drawerPaymentCents}
+                  >
+                    <input
+                      id="supply-paid"
+                      inputMode="decimal"
+                      value={paid}
+                      onChange={(e) => {
+                        setPaid(e.target.value);
+                        clearError('drawerPaymentCents');
+                      }}
+                      aria-invalid={Boolean(errors.drawerPaymentCents)}
+                      aria-describedby={errors.drawerPaymentCents ? 'supply-paid-error' : undefined}
+                    />
+                  </Field>
+                )}
+                <p className="field-helper">
+                  Nëse paguan nga arka, shëno shumën që nxore. Blerja e stokut nuk regjistrohet dy
+                  herë si shpenzim.
+                </p>
+              </>
             )}
-            <p className="field-helper">
-              Nëse paguan nga arka, shëno shumën që nxore. Blerja e stokut nuk regjistrohet dy herë
-              si shpenzim.
-            </p>
             <section className="supply-summary" aria-labelledby="supply-summary-title">
               <h3 id="supply-summary-title">Përmbledhja</h3>
               <dl>
                 <div>
                   <dt>Produkti</dt>
-                  <dd>{selected?.name ?? '—'}</dd>
+                  <dd>{selected ? displayName(selected) : '—'}</dd>
                 </div>
                 <div>
                   <dt>Stoku tani</dt>
@@ -242,6 +273,12 @@ export function SupplyPanel({
               <p className="notice warning-notice">
                 Kjo është vendosja fillestare e stokut. Sasia e regjistruar do të bëhet stoku
                 aktual; verifiko sasinë përpara konfirmimit.
+              </p>
+            )}
+            {duo && selected && selected.trackInventory !== true && (
+              <p className="field-helper">
+                Nëse ndjekja e stokut mbetet e fikur pas furnizimit, pronari mund ta aktivizojë te
+                «Edito produktin».
               </p>
             )}
             <p className="field-helper">Çdo furnizim ruhet në historikun e lëvizjeve të stokut.</p>

@@ -13,7 +13,12 @@ import type {
   ReportSummary,
   Settings,
 } from '../domain/types';
-import type { MutationResult, ProductUpdate, SupplyRequest } from '../domain/configuration';
+import type {
+  MutationResult,
+  ProductUpdate,
+  SupplyProduct,
+  SupplyRequest,
+} from '../domain/configuration';
 import type {
   Printer,
   ReceiptSettings,
@@ -116,7 +121,10 @@ export interface FoxApi {
     update(input: ProductUpdate): Promise<MutationResult<CatalogProduct>>;
     archive(id: string): Promise<MutationResult<string>>;
   };
-  inventory: { addSupply(input: SupplyRequest): Promise<MutationResult<CatalogProduct>> };
+  inventory: {
+    supplyProducts(): Promise<SupplyProduct[]>;
+    addSupply(input: SupplyRequest): Promise<MutationResult<CatalogProduct>>;
+  };
   settings: {
     get(): Promise<Settings>;
     updateBusinessName(input: { businessName: string }): Promise<MutationResult<Settings>>;
@@ -153,6 +161,7 @@ export const IPC = {
   reports: 'fox:reports:summary',
   updateProduct: 'fox:products:update',
   archiveProduct: 'fox:products:archive',
+  supplyProducts: 'fox:inventory:supply-products',
   addSupply: 'fox:inventory:add-supply',
   getOrder: 'fox:orders:get-for-table',
   addProduct: 'fox:orders:add-product',

@@ -198,13 +198,14 @@ export function Inventory() {
                           'Stok i përbashkët'
                         ) : (
                           <>
-                            {product.trackInventory === true && product.stockQuantity !== null && (
-                              <strong>
-                                {duo && product.id === COFFEE_STOCK_ID
-                                  ? coffeeStockLabel(product.stockQuantity)
-                                  : product.stockQuantity}
-                              </strong>
-                            )}
+                            {(duo || product.trackInventory === true) &&
+                              product.stockQuantity !== null && (
+                                <strong>
+                                  {duo && product.id === COFFEE_STOCK_ID
+                                    ? coffeeStockLabel(product.stockQuantity)
+                                    : product.stockQuantity}
+                                </strong>
+                              )}
                             {duoMenu && product.stockQuantity === null ? (
                               <span>Pa numëruar</span>
                             ) : (

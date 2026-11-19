@@ -138,7 +138,7 @@ it('orders Espresso alongside the 19 drinks and reconciles payment, stock and re
   const upgraded = openDatabase(file, '0.7.2-rc.4', true);
   try {
     const repo = createRepositories(upgraded, true, true);
-    const config = createConfigurationService(upgraded, repo, true, true);
+    const config = createConfigurationService(upgraded, repo, true);
     const menu = repo.listProducts(true);
     expect(menu).toHaveLength(20);
     expect(menu.filter((p) => p.categoryId === 'KAFE').map((p) => p.id)).toEqual([espresso]);

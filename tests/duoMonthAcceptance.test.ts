@@ -78,7 +78,7 @@ it('reconciles a 6,000-order DUO month through checkout, reopening and owned res
     db.close();
     db = openDatabase(dbPath, '0.7.2-rc.4', true);
     let { repo, orders, checkout } = services();
-    const config = createConfigurationService(db, repo, true, true);
+    const config = createConfigurationService(db, repo, true);
     const coffee = repo.listProducts().find(({ id }) => id === espresso)!;
     assert.ok(
       config.updateProduct({

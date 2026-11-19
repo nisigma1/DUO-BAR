@@ -1,5 +1,6 @@
 import type { CatalogProduct, CategoryCode, Product } from './types';
 import { CATEGORIES } from './definitions';
+import { COFFEE_STOCK_ID, isCoffee } from './operators';
 import { exactQuantityCost } from './quantity';
 export type FieldErrors = Record<string, string>;
 export type MutationResult<T> =
@@ -21,6 +22,17 @@ export interface SupplyRequest {
   quantity: number;
   drawerPaymentCents?: number;
 }
+export type SupplyProduct = Pick<
+  CatalogProduct,
+  'id' | 'name' | 'active' | 'trackInventory' | 'stockQuantity'
+>;
+
+export function canSupplyProduct(product: SupplyProduct, duo: boolean) {
+  return duo
+    ? !isCoffee(product.id) || product.id === COFFEE_STOCK_ID
+    : product.active && product.trackInventory === true;
+}
+
 export function validateProductUpdate(input: unknown): FieldErrors {
   if (!input || typeof input !== 'object' || Array.isArray(input))
     return { form: 'Kërkesa nuk është e vlefshme.' };

@@ -13,13 +13,14 @@ import { OrderDraftContext } from './orderDraftContext';
 import { PRODUCT_NAME } from '../domain/brand';
 import { DataState } from '../components/common/DataState';
 import { OperatorLogin } from '../components/branding/OperatorLogin';
+import { StaffSupplyPanel } from '../components/inventory/SupplyPanel';
 import { OperatorContext, openSession } from './operatorContext';
 import { OPERATORS, type OperatorSession } from '../domain/operators';
 import type { TableDraft } from '../domain/orderDraft';
 
 const loadIdentity = () => window.fox.settings.get();
 const sections = [
-  { id: 'tables', label: 'Tavolinat', component: Tables },
+  { id: 'tables', label: 'Tavolinat' },
   { id: 'inventory', label: 'Stoku', component: Inventory },
   { id: 'reports', label: 'Raportet', component: Reports },
   { id: 'settings', label: 'Cilësimet', component: Settings },
@@ -61,6 +62,9 @@ function AppScreen({
   const [section, setSection] = useState<(typeof sections)[number]>(sections[0]);
   const [compact, setCompact] = useState(false);
   const [drafts, setDrafts] = useState(() => new Map<string, TableDraft>());
+  const [supply, setSupply] = useState(false);
+  const [stockRevision, setStockRevision] = useState(0);
+  const [supplyNotice, setSupplyNotice] = useState(false);
   const loadBusiness = useCallback(
     () => (employee ? Promise.resolve({ businessName: 'DUO' }) : loadIdentity()),
     [employee],
@@ -68,7 +72,6 @@ function AppScreen({
   const identity = useData(loadBusiness);
   const businessName = identity.data?.businessName.trim();
   const showDuoMark = session.required || /^DUO(?:\s+BAR)?$/i.test(businessName ?? '');
-  const Page = section.component;
   const [now, setNow] = useState(new Date());
   const [date, time] = formatLocalDateTime(now).split(' ');
   useEffect(() => {
@@ -137,6 +140,24 @@ function AppScreen({
         </aside>
         <div className="workspace">
           <div className="topbar">
+            {employee && (
+              <>
+                <Button
+                  onClick={() => {
+                    setSupplyNotice(false);
+                    setSupply(true);
+                  }}
+                >
+                  <Icon name="plus" />
+                  Shto stok
+                </Button>
+                {supplyNotice && (
+                  <span className="feedback" role="status">
+                    Furnizimi u regjistrua.
+                  </span>
+                )}
+              </>
+            )}
             {session.operator && (
               <Button onClick={() => void onLogout()}>{OPERATORS[session.operator]} · Dil</Button>
             )}
@@ -154,12 +175,24 @@ function AppScreen({
           </div>
           {!employee && <PrintNotices />}
           <main className="content">
-            {section.id === 'settings' ? (
+            {section.id === 'tables' ? (
+              <Tables stockRevision={stockRevision} />
+            ) : section.id === 'settings' ? (
               <Settings businessNameOnly={showDuoMark} onNameChanged={identity.refresh} />
             ) : (
-              <Page />
+              <section.component />
             )}
           </main>
+          {supply && (
+            <StaffSupplyPanel
+              onClose={() => setSupply(false)}
+              onSaved={() => {
+                setSupply(false);
+                setSupplyNotice(true);
+                setStockRevision((revision) => revision + 1);
+              }}
+            />
+          )}
         </div>
       </div>
     </OrderDraftContext.Provider>

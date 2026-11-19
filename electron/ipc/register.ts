@@ -19,6 +19,8 @@ const employeeChannels = new Set<string>([
   IPC.getOrder,
   IPC.addProduct,
   IPC.completeOrder,
+  IPC.supplyProducts,
+  IPC.addSupply,
 ]);
 export function registerIpc(
   window: BrowserWindow,
@@ -186,6 +188,17 @@ export function registerIpc(
     [IPC.tables, () => repositories.listTables()],
     [IPC.products, () => repositories.listProducts()],
     [
+      IPC.supplyProducts,
+      () =>
+        repositories.listProducts().map(({ id, name, active, trackInventory, stockQuantity }) => ({
+          id,
+          name,
+          active,
+          trackInventory,
+          stockQuantity,
+        })),
+    ],
+    [
       OPERATOR_IPC.catalog,
       () =>
         repositories
@@ -295,10 +308,26 @@ export function registerIpc(
         : orders.addProduct(input);
     return result.ok ? { ...result, data: workspaceForOperator(result.data) } : result;
   };
+  const addSupply = (input: unknown) => {
+    const employee = access?.required && access.current() !== 'OWNER';
+    if (
+      employee &&
+      input &&
+      typeof input === 'object' &&
+      Object.hasOwn(input, 'drawerPaymentCents')
+    ) {
+      const message = 'Vetëm pronari mund të regjistrojë pagesë nga arka për furnizim.';
+      return { ok: false, errors: { form: message }, message } as const;
+    }
+    const result = configuration.addSupply(input);
+    return result.ok && employee
+      ? { ...result, data: { ...result.data, purchaseCostCents: null, lowStockThreshold: null } }
+      : result;
+  };
   for (const [channel, handler] of [
     [IPC.updateProduct, configuration.updateProduct],
     [IPC.archiveProduct, configuration.archiveProduct],
-    [IPC.addSupply, configuration.addSupply],
+    [IPC.addSupply, addSupply],
     [IPC.addProduct, addToOrder],
     [IPC.incrementItem, orders.incrementItem],
     [IPC.decrementItem, orders.decrementItem],

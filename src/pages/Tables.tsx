@@ -40,13 +40,17 @@ type Checkout = { code: string } & (
   | { workspace: OrderWorkspace; draft: TableDraft; items: ActiveOrderItem[]; totalCents: number }
 );
 
-export function Tables() {
+export function Tables({ stockRevision }: { stockRevision: number }) {
   const { drafts, setDrafts } = useContext(OrderDraftContext);
   const { data, error, retry, setData } = useData(load);
   const session = useContext(OperatorContext);
   const employee = session.required && session.operator !== 'OWNER';
   const hideVolume = session.required || Boolean(session.duoMenu);
   const catalog = useData(session.required ? loadDuoProducts : loadProducts);
+  const { refresh: refreshCatalog } = catalog;
+  useEffect(() => {
+    if (stockRevision > 0) refreshCatalog();
+  }, [stockRevision, refreshCatalog]);
   const [checkout, setCheckout] = useState<Checkout>();
   const checkoutLock = useRef(false);
   const [reservationDialog, setReservationDialog] = useState<{ id: string; code: string }>();

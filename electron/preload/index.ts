@@ -52,7 +52,10 @@ const api: FoxApi = {
     update: (input) => ipcRenderer.invoke(IPC.updateProduct, input),
     archive: (id) => ipcRenderer.invoke(IPC.archiveProduct, id),
   },
-  inventory: { addSupply: (input) => ipcRenderer.invoke(IPC.addSupply, input) },
+  inventory: {
+    supplyProducts: () => ipcRenderer.invoke(IPC.supplyProducts),
+    addSupply: (input) => ipcRenderer.invoke(IPC.addSupply, input),
+  },
   settings: {
     get: () => ipcRenderer.invoke(IPC.settings),
     updateBusinessName: (input) => ipcRenderer.invoke('fox:settings:business-name', input),

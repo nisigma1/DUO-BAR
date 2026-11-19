@@ -114,7 +114,7 @@ async function start() {
   registerIpc(
     window,
     repositories,
-    createConfigurationService(database, repositories, duo, duoMenu),
+    createConfigurationService(database, repositories, duo),
     orders,
     createCheckoutService(database, orders, duo),
     createReceiptService(receiptRepository, printerAdapter, printManager),

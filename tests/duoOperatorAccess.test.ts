@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { mkdtempSync, realpathSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -135,11 +135,14 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
       const checkout = createCheckoutService(db, orders);
       const kick = vi.fn();
       const shiftReport = vi.fn((period: unknown) => readShiftSales(db, period));
-      const repo = { listTables: () => [], listProducts: () => [{ purchaseCostCents: 30 }] };
+      const repo = createRepositories(db);
+      db.prepare(
+        "UPDATE products SET purchase_cost_cents=30,low_stock_threshold=4,active=0 WHERE id='PIJE-1'",
+      ).run();
       registerIpc(
         { webContents: contents } as unknown as BrowserWindow,
-        repo as never,
-        createConfigurationService(db, createRepositories(db)),
+        { ...repo, listTables: () => [] },
+        createConfigurationService(db, repo, true),
         { submitDraft } as never,
         checkout,
         {} as never,
@@ -151,7 +154,10 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
         shiftReport,
       );
 
+      const supply = { requestId: randomUUID(), productId: 'PIJE-1', quantity: 200 };
       expect(() => call(IPC.tables)).toThrow('nuk lejohet');
+      expect(() => call(IPC.supplyProducts)).toThrow('nuk lejohet');
+      expect(() => call(IPC.addSupply, supply)).toThrow('nuk lejohet');
       expect(() => call(IPC.completeOrder, { orderId, expectedRevision })).toThrow('nuk lejohet');
       for (let attempt = 0; attempt < 4; attempt++) {
         expect(() => call(OPERATOR_IPC.login, { id: 'OWNER', pin: workerPin })).toThrow(
@@ -163,7 +169,32 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
       });
       expect(call(IPC.tables)).toEqual([]);
       expect(() => call(IPC.archiveProduct, 'UJE-1')).toThrow('nuk lejohet');
-      expect(call(OPERATOR_IPC.catalog)).toMatchObject([{ purchaseCostCents: null }]);
+      expect(call(OPERATOR_IPC.catalog)).toContainEqual(
+        expect.objectContaining({ id: 'PIJE-1', purchaseCostCents: null }),
+      );
+      expect(call(IPC.supplyProducts)).toContainEqual({
+        id: 'PIJE-1',
+        name: expect.any(String),
+        active: false,
+        trackInventory: null,
+        stockQuantity: null,
+      });
+      expect(call(IPC.addSupply, { ...supply, drawerPaymentCents: 200 })).toMatchObject({
+        ok: false,
+        errors: { form: 'Vetëm pronari mund të regjistrojë pagesë nga arka për furnizim.' },
+      });
+      expect(db.prepare('SELECT count(*) FROM inventory_movements').pluck().get()).toBe(0);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        expect(call(IPC.addSupply, supply)).toMatchObject({
+          ok: true,
+          data: {
+            stockQuantity: 200,
+            active: false,
+            purchaseCostCents: null,
+            lowStockThreshold: null,
+          },
+        });
+      }
       expect(() =>
         handlers.get(IPC.tables)!({ ...event, senderFrame: {} } as IpcMainInvokeEvent),
       ).toThrow('Unauthorized');
@@ -194,7 +225,14 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
         db.prepare("SELECT amount_cents FROM cash_events WHERE kind='CASH_SALE_IN'").pluck().all(),
       ).toEqual([150]);
       expect(db.prepare('SELECT count(*) FROM receipt_documents').pluck().get()).toBe(1);
-      for (const channel of [IPC.products, IPC.settings, FINANCE_IPC.report, OPERATOR_IPC.report]) {
+      for (const channel of [
+        IPC.products,
+        IPC.updateProduct,
+        IPC.settings,
+        FINANCE_IPC.loss,
+        FINANCE_IPC.report,
+        OPERATOR_IPC.report,
+      ]) {
         expect(() => call(channel, {})).toThrow('nuk lejohet');
       }
       expect(() => call(OPERATOR_IPC.login, { id: 'OWNER', pin: ownerPin })).toThrow(
@@ -203,6 +241,12 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
       call(OPERATOR_IPC.logout);
       expect(call(OPERATOR_IPC.login, { id: 'PM', pin: workerPin })).toMatchObject({
         operator: 'PM',
+      });
+      expect(
+        call(IPC.addSupply, { ...supply, requestId: randomUUID(), quantity: 6_000 }),
+      ).toMatchObject({
+        ok: true,
+        data: { stockQuantity: 6_200 },
       });
       call(OPERATOR_IPC.logout);
       expect(() => call(OPERATOR_IPC.login, { id: 'OWNER', pin: wrongPin })).toThrow(

@@ -118,4 +118,25 @@ describe('DUO coffee and shift accounting', () => {
     expect(coffeeBalance(db)).toBe(109);
     expect(readShiftSales(db, 'DAY').rows.at(-1)).toEqual({ operator: 'LEGACY', totalCents: 120 });
   });
+
+  it('receives stock for an untracked drink without blocking an existing unpaid bill', () => {
+    const drink = 'PIJE-1';
+    db.prepare('UPDATE products SET selling_price_cents=200,track_inventory=0 WHERE id=?').run(
+      drink,
+    );
+    const { config, orders, checkout } = services();
+    const placed = orders.submitDraft(draft(orders, drink, 3));
+    if (!placed.ok || !placed.data.order) throw Error('Expected an open drink order');
+    const { id, revision } = placed.data.order;
+    expect(
+      config.addSupply({ requestId: randomUUID(), productId: drink, quantity: 1 }),
+    ).toMatchObject({ ok: true, data: { stockQuantity: 1, trackInventory: false } });
+    expect(orders.getForTable('M5').order).toEqual(placed.data.order);
+    expect(checkout.completeOrder({ orderId: id, expectedRevision: revision })).toMatchObject({
+      ok: true,
+    });
+    expect(
+      config.addSupply({ requestId: randomUUID(), productId: drink, quantity: 2 }),
+    ).toMatchObject({ ok: true, data: { stockQuantity: 3, trackInventory: false } });
+  });
 });

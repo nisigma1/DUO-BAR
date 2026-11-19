@@ -17,6 +17,7 @@ import type {
   MutationResult,
   NewStockProductRequest,
   ProductUpdate,
+  StockCountRequest,
   SupplyProduct,
   SupplyRequest,
 } from '../domain/configuration';
@@ -125,6 +126,7 @@ export interface FoxApi {
   inventory: {
     supplyProducts(): Promise<SupplyProduct[]>;
     addSupply(input: SupplyRequest): Promise<MutationResult<CatalogProduct>>;
+    setStockCount(input: StockCountRequest): Promise<MutationResult<CatalogProduct>>;
     createProductWithStock(input: NewStockProductRequest): Promise<MutationResult<CatalogProduct>>;
   };
   settings: {
@@ -165,6 +167,7 @@ export const IPC = {
   archiveProduct: 'fox:products:archive',
   supplyProducts: 'fox:inventory:supply-products',
   addSupply: 'fox:inventory:add-supply',
+  setStockCount: 'fox:inventory:set-stock-count',
   createProductWithStock: 'fox:inventory:create-product-with-stock',
   getOrder: 'fox:orders:get-for-table',
   addProduct: 'fox:orders:add-product',

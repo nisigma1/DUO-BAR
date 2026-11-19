@@ -1,11 +1,14 @@
 import type Database from 'better-sqlite3';
 import {
   canSupplyProduct,
+  stockHolderId,
   validateProductUpdate,
+  validateStockCount,
   validateSupply,
   type MutationResult,
   type NewStockProductRequest,
   type ProductUpdate,
+  type StockCountRequest,
   type SupplyRequest,
 } from '../../src/domain/configuration';
 import type { CatalogProduct, Settings } from '../../src/domain/types';
@@ -25,6 +28,78 @@ export function createConfigurationService(
     message: 'Kontrollo të dhënat e vendosura.',
   });
   const configuration = {
+    setStockCount(input: unknown): MutationResult<CatalogProduct> {
+      const errors = validateStockCount(input);
+      if (Object.keys(errors).length) return failure(errors);
+      const value = input as StockCountRequest;
+      return db
+        .transaction(() => {
+          const selected = find(value.productId);
+          const stockId = selected && stockHolderId(selected, duo);
+          const product = stockId === selected?.id ? selected : stockId ? find(stockId) : undefined;
+          if (!product) return failure({ productId: 'Produkti nuk u gjet.' });
+
+          let quantity = value.quantity;
+          try {
+            if (quantity !== 0 && (product.coffeeRecipe || (duo && product.id === COFFEE_STOCK_ID)))
+              quantity = coffeePortions(quantity);
+          } catch (error) {
+            return failure({ quantity: (error as Error).message });
+          }
+
+          const token = value.requestId.toLowerCase();
+          const key = 'stock_count_request:' + token;
+          const fingerprint = JSON.stringify([value.productId, value.expectedQuantity, quantity]);
+          const saved = db.prepare('SELECT value FROM settings WHERE key=?').pluck().get(key);
+          if (saved !== undefined)
+            return saved === fingerprint
+              ? ({ ok: true, data: product } as const)
+              : failure({ form: 'Kjo kërkesë është përdorur për një numërim tjetër.' });
+          if (product.stockQuantity !== value.expectedQuantity)
+            return failure({ form: 'Stoku ka ndryshuar. Rifresko dhe kontrollo sasinë totale.' });
+          if (
+            product.trackInventory !== true &&
+            db
+              .prepare(
+                `SELECT 1 FROM order_items i JOIN orders o ON o.id=i.order_id
+              WHERE i.product_id=? AND o.status='OPEN' LIMIT 1`,
+              )
+              .get(product.id)
+          )
+            return failure({
+              form: 'Për numërimin e parë, mbyll porositë e hapura me këtë produkt.',
+            });
+
+          let delta: number;
+          try {
+            delta = exactQuantity(quantity, product.stockQuantity ?? 0, true);
+          } catch {
+            return failure({ quantity: 'Ndryshimi nuk mund të ruhet saktë.' });
+          }
+          const now = new Date().toISOString();
+          db.prepare('UPDATE products SET track_inventory=1,updated_at=? WHERE id=?').run(
+            now,
+            product.id,
+          );
+          db.prepare(
+            `
+            INSERT INTO inventory_balances VALUES (?,?,?)
+            ON CONFLICT(product_id) DO UPDATE SET quantity=excluded.quantity,updated_at=excluded.updated_at
+          `,
+          ).run(product.id, quantity, now);
+          if (delta !== 0)
+            db.prepare(
+              `
+              INSERT INTO inventory_movements (id,product_id,type,quantity_delta,related_order_id,note,created_at)
+              VALUES (?,?,'MANUAL_ADJUSTMENT',?,NULL,'Numërim i stokut',?)
+            `,
+            ).run(token, product.id, delta, now);
+          db.prepare('INSERT INTO settings VALUES (?,?)').run(key, fingerprint);
+          return { ok: true, data: find(product.id)! } as const;
+        })
+        .immediate();
+    },
+
     archiveProduct(input: unknown): MutationResult<string> {
       const reject = (message: string): MutationResult<string> => ({
         ok: false,

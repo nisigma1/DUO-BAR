@@ -10,17 +10,19 @@ import type { CatalogProduct, CategoryCode } from '../domain/types';
 import { Button, EmptyState, Icon, PageHeader, StockBadge } from '../components/common/Controls';
 import { ProductEditor } from '../components/inventory/ProductEditor';
 import { SupplyPanel } from '../components/inventory/SupplyPanel';
+import { StockCountPanel } from '../components/inventory/StockCountPanel';
 import { StockLossPanel } from '../components/inventory/StockLossPanel';
 import { OperatorContext } from '../app/operatorContext';
 import { COFFEE_STOCK_ID, coffeeStockLabel, isCoffee } from '../domain/operators';
 const load = () => window.fox.products.list();
 export function Inventory() {
   const { required: duo, duoMenu } = useContext(OperatorContext);
-  const { data: products, error, retry, setData } = useData(load);
+  const { data: products, error, retry, refresh, setData } = useData(load);
   const [category, setCategory] = useState<CategoryCode | ''>('');
   const [search, setSearch] = useState('');
   const [editor, setEditor] = useState<{ product: CatalogProduct; archive: boolean }>();
   const [supply, setSupply] = useState(false);
+  const [count, setCount] = useState(false);
   const [loss, setLoss] = useState(false);
   const [feedback, setFeedback] = useState('');
   useEffect(() => {
@@ -75,6 +77,9 @@ export function Inventory() {
           <Button variant="primary" onClick={() => setSupply(true)} disabled={!products}>
             <Icon name="plus" />
             Shto stok
+          </Button>
+          <Button onClick={() => setCount(true)} disabled={!products?.length}>
+            Ndrysho stokun
           </Button>
           <Button data-stock-loss onClick={() => setLoss(true)} disabled={!products}>
             Hiq si humbje
@@ -321,6 +326,20 @@ export function Inventory() {
               product,
               created ? 'Produkti i ri dhe stoku u ruajtën.' : 'Furnizimi u regjistrua.',
             );
+          }}
+        />
+      )}
+      {count && (
+        <StockCountPanel
+          products={products}
+          duo={duo}
+          onClose={() => {
+            setCount(false);
+            refresh();
+          }}
+          onSaved={(product) => {
+            setCount(false);
+            onSaved(product, 'Stoku u ruajt.');
           }}
         />
       )}

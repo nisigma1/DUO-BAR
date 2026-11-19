@@ -236,6 +236,7 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
       for (const channel of [
         IPC.products,
         IPC.updateProduct,
+        IPC.setStockCount,
         IPC.settings,
         FINANCE_IPC.loss,
         FINANCE_IPC.report,
@@ -272,6 +273,14 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
         ok: true,
         data: { name: newProduct.name, stockQuantity: newProduct.quantity },
       });
+      expect(
+        call(IPC.setStockCount, {
+          ...supply,
+          requestId: randomUUID(),
+          expectedQuantity: 6200,
+          quantity: 12,
+        }),
+      ).toMatchObject({ ok: true, data: { stockQuantity: 12 } });
       expect(call(IPC.archiveProduct, 'UJE-1')).toMatchObject({ ok: true });
       expect(call(OPERATOR_IPC.report, 'DAY')).toMatchObject({ totalCents: 150 });
       expect(shiftReport).toHaveBeenCalledExactlyOnceWith('DAY');

@@ -22,6 +22,12 @@ export interface SupplyRequest {
   quantity: number;
   drawerPaymentCents?: number;
 }
+export interface StockCountRequest {
+  requestId: string;
+  productId: string;
+  quantity: number;
+  expectedQuantity: number | null;
+}
 export type NewStockProductRequest = Omit<SupplyRequest, 'productId'> & {
   name: string;
   categoryId: CategoryCode;
@@ -35,6 +41,38 @@ export function canSupplyProduct(product: SupplyProduct, duo: boolean) {
   return duo
     ? Boolean(product.coffeeRecipe) || !isCoffee(product.id) || product.id === COFFEE_STOCK_ID
     : product.active && product.trackInventory === true;
+}
+
+export function stockHolderId(product: SupplyProduct, duo: boolean) {
+  return (
+    product.coffeeRecipe?.stockProductId ??
+    (duo && isCoffee(product.id) ? COFFEE_STOCK_ID : product.id)
+  );
+}
+
+export function validateStockCount(input: unknown): FieldErrors {
+  const invalid = { form: 'Kërkesa e numërimit nuk është e vlefshme.' };
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return invalid;
+  const value = input as Record<string, unknown>;
+  if (
+    Object.keys(value).some(
+      (key) => !['requestId', 'productId', 'quantity', 'expectedQuantity'].includes(key),
+    ) ||
+    typeof value.requestId !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.requestId)
+  )
+    return invalid;
+  if (typeof value.productId !== 'string' || !value.productId || value.productId.length > 200)
+    return { productId: 'Zgjidh produktin.' };
+  const validQuantity = (quantity: unknown) =>
+    typeof quantity === 'number' &&
+    Number.isFinite(quantity) &&
+    quantity >= 0 &&
+    quantity <= Number.MAX_SAFE_INTEGER;
+  if (value.expectedQuantity !== null && !validQuantity(value.expectedQuantity)) return invalid;
+  return validQuantity(value.quantity)
+    ? {}
+    : { quantity: 'Shkruaj sasinë totale, zero ose më shumë.' };
 }
 
 export function validateProductUpdate(input: unknown): FieldErrors {

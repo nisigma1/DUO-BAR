@@ -55,6 +55,7 @@ const api: FoxApi = {
   inventory: {
     supplyProducts: () => ipcRenderer.invoke(IPC.supplyProducts),
     addSupply: (input) => ipcRenderer.invoke(IPC.addSupply, input),
+    setStockCount: (input) => ipcRenderer.invoke(IPC.setStockCount, input),
     createProductWithStock: (input) => ipcRenderer.invoke(IPC.createProductWithStock, input),
   },
   settings: {

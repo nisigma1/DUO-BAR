@@ -132,6 +132,94 @@ it('adds the photographed coffees with kg supplies, distinct stocks, and stable 
   }
 });
 
+it('lets the owner repeatedly set an exact total for shared and individually counted stock', () => {
+  const initial = openDatabase(file);
+  initial.prepare("UPDATE settings SET value='DUO' WHERE key='business_name'").run();
+  initial.prepare("UPDATE inventory_balances SET quantity=489 WHERE product_id='KAFE-1'").run();
+  initial.close();
+
+  const db = openDatabase(file, '0.7.2-rc.4', true);
+  try {
+    const repo = createRepositories(db, true, true);
+    const configuration = createConfigurationService(db, repo, true);
+    const request = {
+      requestId: randomUUID(),
+      productId: 'KAFE-1',
+      quantity: 13,
+      expectedQuantity: 489,
+    };
+    expect(configuration.setStockCount(request)).toMatchObject({
+      ok: true,
+      data: { id: 'KAFE-1', stockQuantity: 1430 },
+    });
+    expect(configuration.setStockCount(request).ok).toBe(true);
+    expect(configuration.setStockCount({ ...request, quantity: 12 }).ok).toBe(false);
+    const stale = { ...request, requestId: randomUUID(), quantity: 12 };
+    expect(configuration.setStockCount(stale)).toMatchObject({
+      ok: false,
+      errors: { form: expect.stringContaining('Stoku ka ndryshuar') },
+    });
+    const remove = {
+      requestId: randomUUID(),
+      productId: 'KAFE-2',
+      quantity: 0,
+      expectedQuantity: 1430,
+    };
+    expect(configuration.setStockCount(remove)).toMatchObject({
+      ok: true,
+      data: { id: 'KAFE-1', stockQuantity: 0 },
+    });
+    expect(configuration.setStockCount(request)).toMatchObject({
+      ok: true,
+      data: { stockQuantity: 0 },
+    });
+    expect(
+      configuration.setStockCount({ ...request, requestId: randomUUID(), expectedQuantity: 0 }).ok,
+    ).toBe(true);
+    expect(coffeeBalance(db)).toBe(1430);
+
+    const cola = 'duo-drinks-v1-1';
+    const countCola = {
+      requestId: randomUUID(),
+      productId: cola,
+      quantity: 20,
+      expectedQuantity: null,
+    };
+    const orders = createOrderService(db, repo, { operator: () => 'OWNER' });
+    const opened = orders.addProduct({ tableId: 'M1', productId: cola });
+    if (!opened.ok || !opened.data.order?.items[0]) throw Error('Expected an open untracked order');
+    expect(configuration.setStockCount(countCola)).toMatchObject({
+      ok: false,
+      errors: { form: expect.stringContaining('porositë e hapura') },
+    });
+    expect(orders.removeItem({ tableId: 'M1', itemId: opened.data.order.items[0].id }).ok).toBe(
+      true,
+    );
+    expect(configuration.setStockCount(countCola)).toMatchObject({
+      ok: true,
+      data: { stockQuantity: 20, trackInventory: true },
+    });
+    expect(
+      configuration.setStockCount({
+        ...countCola,
+        requestId: randomUUID(),
+        quantity: 14,
+        expectedQuantity: 20,
+      }),
+    ).toMatchObject({
+      ok: true,
+      data: { stockQuantity: 14 },
+    });
+    expect(
+      db.prepare('SELECT quantity_delta FROM inventory_movements ORDER BY rowid').pluck().all(),
+    ).toEqual([941, -1430, 1430, 20, -6]);
+    expect(db.prepare('SELECT count(*) FROM cash_events').pluck().get()).toBe(0);
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  } finally {
+    db.close();
+  }
+});
+
 it('reuses a previously added PaPlum with the printed price and shared recipe', () => {
   const original = openDatabase(file);
   original.prepare("UPDATE settings SET value='DUO' WHERE key='business_name'").run();

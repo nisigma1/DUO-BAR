@@ -16,6 +16,7 @@ import {
   unitProfit,
   validateProductUpdate,
   type ProductUpdate,
+  type NewStockProductRequest,
 } from '../src/domain/configuration';
 import { formatMoney, parseEuro } from '../src/domain/money';
 let db: Database.Database;
@@ -41,6 +42,47 @@ const update = (changes: Partial<ProductUpdate> = {}): ProductUpdate => ({
   lowStockThreshold: null,
   active: true,
   ...changes,
+});
+
+it('rejects invalid custom products and rolls back creation when the initial supply fails', () => {
+  const { service, repositories } = context();
+  const before = repositories.listProducts();
+  const request: NewStockProductRequest = {
+    requestId: randomUUID(),
+    name: 'Produkt i ri',
+    categoryId: 'PIJE',
+    quantity: 5,
+  };
+  for (const invalid of [
+    { name: ' ' },
+    { name: 'Rreshti 1\nRreshti 2' },
+    { name: 'x'.repeat(201) },
+    { categoryId: 'E_PANJOHUR' },
+    { requestId: 'jo-uuid' },
+    { quantity: 0 },
+    { drawerPaymentCents: 0 },
+    { sellingPriceCents: 10 },
+  ]) {
+    expect(service.createProductWithStock({ ...request, ...invalid }).ok).toBe(false);
+  }
+  db.exec(`CREATE TRIGGER fail_first_supply BEFORE INSERT ON inventory_movements
+    BEGIN SELECT RAISE(ABORT,'Test initial supply failure'); END;`);
+  expect(() => service.createProductWithStock(request)).toThrow('Test initial supply failure');
+  expect(repositories.listProducts()).toEqual(before);
+  expect(db.prepare('SELECT COUNT(*) FROM inventory_balances').pluck().get()).toBe(before.length);
+  expect(db.prepare('SELECT COUNT(*) FROM inventory_movements').pluck().get()).toBe(0);
+  db.exec('DROP TRIGGER fail_first_supply');
+
+  expect(service.updateProduct(update()).ok).toBe(true);
+  expect(
+    service.addSupply({ requestId: request.requestId, productId: 'UJE-1', quantity: 5 }).ok,
+  ).toBe(true);
+  expect(service.createProductWithStock(request).ok).toBe(false);
+  expect(repositories.listProducts()).toHaveLength(before.length);
+  expect(service.createProductWithStock({ ...request, requestId: randomUUID() })).toMatchObject({
+    ok: true,
+    data: { stockQuantity: 5 },
+  });
 });
 describe('deterministic euro inputs', () => {
   it('preserves NULL and converts euro strings using exact cents', () => {

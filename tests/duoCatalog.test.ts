@@ -8,9 +8,10 @@ import { createRepositories } from '../electron/database/repositories';
 import { createOrderService } from '../electron/database/orders';
 import { createCheckoutService } from '../electron/database/checkout';
 import { inspectDatabase } from '../electron/database/health';
-import { addDuoCatalog } from '../electron/database/duoCatalog';
+import { addDuoCatalog, hasDuoMenu } from '../electron/database/duoCatalog';
 import { createConfigurationService } from '../electron/database/configuration';
 import { readShiftSales } from '../electron/database/duoReports';
+import type { NewStockProductRequest } from '../src/domain/configuration';
 
 let directory: string;
 let file: string;
@@ -20,6 +21,104 @@ beforeEach(() => {
 });
 afterEach(() => {
   fs.rmSync(directory, { recursive: true, force: true });
+});
+
+it('creates a custom product and its first supply once, preserving an open DUO order', () => {
+  const initial = openDatabase(file);
+  initial.prepare("UPDATE settings SET value='DUO' WHERE key='business_name'").run();
+  const earlier = createConfigurationService(
+    initial,
+    createRepositories(initial),
+  ).createProductWithStock({
+    requestId: randomUUID(),
+    name: 'Pije para konfigurimit DUO',
+    categoryId: 'PIJE',
+    quantity: 12,
+  });
+  if (!earlier.ok) throw Error(earlier.message);
+  initial.close();
+
+  const request: NewStockProductRequest = {
+    requestId: randomUUID(),
+    name: '  Pije speciale e shtëpisë  ',
+    categoryId: 'PIJE',
+    quantity: 24,
+    drawerPaymentCents: 1200,
+  };
+  let db = openDatabase(file, '0.7.2-rc.4', true);
+  try {
+    const repo = createRepositories(db, true, true);
+    expect(hasDuoMenu(db)).toBe(true);
+    expect(repo.listProducts()).toContainEqual(earlier.data);
+    const config = createConfigurationService(db, repo, true);
+    const orders = createOrderService(db, repo, { operator: () => 'OWNER' });
+    const existing = orders.addProduct({ tableId: 'M1', productId: 'duo-drinks-v1-1' });
+    if (!existing.ok || !existing.data.order) throw Error('Expected a saved DUO order');
+
+    const created = config.createProductWithStock(request);
+    if (!created.ok) throw Error(created.message);
+    const product = created.data;
+    expect(product).toMatchObject({
+      name: 'Pije speciale e shtëpisë',
+      categoryId: 'PIJE',
+      purchaseCostCents: null,
+      sellingPriceCents: null,
+      stockQuantity: 24,
+      trackInventory: true,
+      active: true,
+    });
+    expect(repo.listProducts()).toHaveLength(22);
+    expect(orders.addProduct({ tableId: 'M2', productId: product.id }).ok).toBe(false);
+    expect(orders.getForTable('M1')).toEqual(existing.data);
+    expect(config.createProductWithStock(request)).toEqual(created);
+    expect(
+      config.createProductWithStock({ ...request, requestId: request.requestId.toUpperCase() }),
+    ).toEqual(created);
+    expect(config.createProductWithStock({ ...request, name: 'Emër tjetër' }).ok).toBe(false);
+    expect(config.createProductWithStock({ ...request, categoryId: 'UJE' }).ok).toBe(false);
+    expect(config.createProductWithStock({ ...request, quantity: 25 }).ok).toBe(false);
+    expect(config.createProductWithStock({ ...request, drawerPaymentCents: 1500 }).ok).toBe(false);
+
+    db.close();
+    db = openDatabase(file, '0.7.2-rc.4', true);
+    const reopened = createRepositories(db, true, true);
+    const reopenedConfig = createConfigurationService(db, reopened, true);
+    expect(hasDuoMenu(db)).toBe(true);
+    expect(reopened.listProducts(true)).toContainEqual(product);
+    expect(reopenedConfig.createProductWithStock(request)).toEqual(created);
+    expect(
+      db
+        .prepare('SELECT COUNT(*) FROM inventory_movements WHERE product_id=?')
+        .pluck()
+        .get(product.id),
+    ).toBe(1);
+    expect(db.prepare('SELECT kind, amount_cents FROM cash_events').all()).toEqual([
+      { kind: 'INVENTORY_SUPPLY_OUT', amount_cents: -1200 },
+    ]);
+
+    const updated = reopenedConfig.updateProduct({
+      ...product,
+      name: 'Pija e shtëpisë',
+      sellingPriceCents: 200,
+    });
+    expect(updated.ok).toBe(true);
+    expect(reopenedConfig.createProductWithStock(request)).toEqual(updated);
+    const reopenedOrders = createOrderService(db, reopened, { operator: () => 'OWNER' });
+    expect(reopenedOrders.getForTable('M1')).toEqual(existing.data);
+    expect(reopenedOrders.addProduct({ tableId: 'M2', productId: product.id }).ok).toBe(true);
+    const stockRequest = { requestId: randomUUID(), productId: product.id, quantity: 4 };
+    expect(reopenedConfig.addSupply(stockRequest)).toMatchObject({
+      ok: true,
+      data: { stockQuantity: 28 },
+    });
+    expect(reopenedConfig.archiveProduct(product.id).ok).toBe(true);
+    expect(reopened.listProducts().some(({ id }) => id === product.id)).toBe(false);
+    expect(reopenedConfig.createProductWithStock(request).ok).toBe(false);
+    expect(reopenedOrders.getForTable('M2').order?.items[0]?.productId).toBe(product.id);
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  } finally {
+    if (db.open) db.close();
+  }
 });
 
 it('adds 19 priced products once to the DUO catalog without changing history or stock', () => {

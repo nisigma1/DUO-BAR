@@ -234,13 +234,13 @@ try {
   await js('document.querySelector(".row-actions button").click()');
   await until('Boolean(document.querySelector("#sellingPriceCents"))');
   const field = async (id, value) =>
-    js(
-      '(()=>{const e=document.getElementById(' +
-        JSON.stringify(id) +
-        ');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(e,' +
-        JSON.stringify(value) +
-        ');e.dispatchEvent(new Event("input",{bubbles:true}));})()',
-    );
+    js(`(() => {
+      const input = document.getElementById(${JSON.stringify(id)});
+      const select = input instanceof HTMLSelectElement;
+      const prototype = select ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(prototype, 'value').set.call(input, ${JSON.stringify(value)});
+      input.dispatchEvent(new Event(select ? 'change' : 'input', { bubbles: true }));
+    })()`);
   await field('sellingPriceCents', 'abc');
   await js('document.querySelector("button[form=product-form]").click()');
   await until('Boolean(document.querySelector("#sellingPriceCents[aria-invalid=true]"))');
@@ -258,9 +258,7 @@ try {
     '[...document.querySelectorAll("button")].find(b=>b.textContent.includes("Shto stok")).click()',
   );
   await until('Boolean(document.querySelector("#supply-form"))');
-  await js(
-    '(()=>{const e=document.querySelector("#productId");e.value="KAFE-1";e.dispatchEvent(new Event("change",{bubbles:true}));})()',
-  );
+  await field('productId', 'KAFE-1');
   await field('quantity', '-5');
   await js('document.querySelector("button[form=supply-form]").click()');
   await until('Boolean(document.querySelector("#quantity[aria-invalid=true]"))');
@@ -466,6 +464,47 @@ try {
   result.checks.push(
     'Direct stock product removal supports cancel and preserves recorded orders and sales',
   );
+  const openOrder = await api('return fox.orders.getForTable("M5");');
+  assert.equal(openOrder.order.status, 'OPEN');
+  await nav('inventory');
+  await tap('[data-page=inventory] .page-actions .button-primary');
+  await until('Boolean(document.querySelector(\'#productId option[value="new-product"]\'))');
+  await field('productId', 'new-product');
+  await until('Boolean(document.querySelector("#new-product-name"))');
+  await field('new-product-category', 'UJE');
+  await field('quantity', '24');
+  assert.equal(await js('document.querySelector("#new-product-category").value'), 'UJE');
+  assert.equal(await js('document.querySelector("#quantity").value'), '24');
+  assert.equal(
+    await js('document.querySelector("button[form=supply-form]").textContent.trim()'),
+    'Ruaj produktin dhe stokun',
+  );
+  await tap('button[form=supply-form]');
+  await until('Boolean(document.querySelector("#new-product-name[aria-invalid=true]"))');
+  const productName = 'Ujë prove QA';
+  await field('new-product-name', productName);
+  await js(
+    '(()=>{const button=document.querySelector("button[form=supply-form]");button.click();button.click();})()',
+  );
+  const name = JSON.stringify(productName);
+  await until(`!document.querySelector('dialog[open]') && [...document.querySelectorAll('.catalog tbody tr')].some(row =>
+    row.querySelector('.product-name').textContent.trim() === ${name} &&
+    row.querySelector('.stock-cell strong')?.textContent === '24')`);
+  assert.equal(
+    await js('document.querySelector(".table-caption [role=status]").textContent.trim()'),
+    'Produkti i ri dhe stoku u ruajtën.',
+  );
+  const added = await api(
+    `return (await fox.products.list()).filter(product => product.name === ${name});`,
+  );
+  assert.equal(added.length, 1);
+  assert.equal(added[0].categoryId, 'UJE');
+  assert.equal(added[0].stockQuantity, 24);
+  assert.equal(added[0].trackInventory, true);
+  assert.equal(added[0].sellingPriceCents, null);
+  assert.equal(added[0].purchaseCostCents, null);
+  assert.deepEqual(await api('return fox.orders.getForTable("M5");'), openOrder);
+  result.checks.push('Owner can create a stock product once while preserving the open table order');
   await command('HeapProfiler.collectGarbage');
   result.dom = await command('Memory.getDOMCounters');
   const logDirectory = path.join(directory, 'logs');

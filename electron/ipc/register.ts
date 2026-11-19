@@ -328,6 +328,7 @@ export function registerIpc(
     [IPC.updateProduct, configuration.updateProduct],
     [IPC.archiveProduct, configuration.archiveProduct],
     [IPC.addSupply, addSupply],
+    [IPC.createProductWithStock, configuration.createProductWithStock],
     [IPC.addProduct, addToOrder],
     [IPC.incrementItem, orders.incrementItem],
     [IPC.decrementItem, orders.decrementItem],

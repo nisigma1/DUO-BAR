@@ -15,6 +15,7 @@ import type {
 } from '../domain/types';
 import type {
   MutationResult,
+  NewStockProductRequest,
   ProductUpdate,
   SupplyProduct,
   SupplyRequest,
@@ -124,6 +125,7 @@ export interface FoxApi {
   inventory: {
     supplyProducts(): Promise<SupplyProduct[]>;
     addSupply(input: SupplyRequest): Promise<MutationResult<CatalogProduct>>;
+    createProductWithStock(input: NewStockProductRequest): Promise<MutationResult<CatalogProduct>>;
   };
   settings: {
     get(): Promise<Settings>;
@@ -163,6 +165,7 @@ export const IPC = {
   archiveProduct: 'fox:products:archive',
   supplyProducts: 'fox:inventory:supply-products',
   addSupply: 'fox:inventory:add-supply',
+  createProductWithStock: 'fox:inventory:create-product-with-stock',
   getOrder: 'fox:orders:get-for-table',
   addProduct: 'fox:orders:add-product',
   incrementItem: 'fox:orders:increment-item',

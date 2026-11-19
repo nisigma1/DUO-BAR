@@ -22,6 +22,10 @@ export interface SupplyRequest {
   quantity: number;
   drawerPaymentCents?: number;
 }
+export type NewStockProductRequest = Omit<SupplyRequest, 'productId'> & {
+  name: string;
+  categoryId: CategoryCode;
+};
 export type SupplyProduct = Pick<
   CatalogProduct,
   'id' | 'name' | 'active' | 'trackInventory' | 'stockQuantity'

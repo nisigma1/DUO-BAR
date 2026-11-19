@@ -33,6 +33,17 @@ const menuIds = new Set(drinks.map((_, index) => productId(index)));
 const PRICE_SETUP = 'duo_menu_prices_v1';
 const ESPRESSO_SETUP = 'duo_menu_espresso_v1';
 
+export const CUSTOM_STOCK_PRODUCT_PREFIX = 'custom-stock-v1-';
+
+export function isCustomStockProduct(id: string) {
+  return (
+    id.startsWith(CUSTOM_STOCK_PRODUCT_PREFIX) &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(
+      id.slice(CUSTOM_STOCK_PRODUCT_PREFIX.length),
+    )
+  );
+}
+
 export function isDuoMenuProduct(id: string) {
   return menuIds.has(id);
 }
@@ -86,10 +97,11 @@ export function addDuoCatalog(db: Database.Database, now: string): void {
     name: string;
     category_id: CategoryCode;
   }[];
-  const byId = new Map(products.map((product) => [product.id, product]));
+  const legacy = products.filter((product) => !isCustomStockProduct(product.id));
+  const byId = new Map(legacy.map((product) => [product.id, product]));
   // Exact baseline also prevents a second import and avoids guessing after local catalog edits.
   if (
-    products.length !== INITIAL_PRODUCTS.length ||
+    legacy.length !== INITIAL_PRODUCTS.length ||
     !INITIAL_PRODUCTS.every(({ id, name, categoryId }) => {
       const existing = byId.get(id);
       return existing?.name.normalize('NFC') === name && existing.category_id === categoryId;

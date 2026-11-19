@@ -4,7 +4,7 @@ import type { TableSummary, CatalogProduct, ReportSummary, Settings } from '../.
 
 import { COFFEE_STOCK_ID, isCoffee } from '../../src/domain/operators';
 import { coffeeBalance } from './duoCoffee';
-import { isDuoMenuProduct } from './duoCatalog';
+import { isCustomStockProduct, isDuoMenuProduct } from './duoCatalog';
 
 export function createRepositories(db: Database.Database, duo = false, duoMenu = false) {
   return {
@@ -46,7 +46,12 @@ export function createRepositories(db: Database.Database, duo = false, duoMenu =
       })[];
       const sharedCoffee = duo && forOrders ? coffeeBalance(db) : null;
       const visible = duoMenu
-        ? rows.filter((row) => isDuoMenuProduct(row.id) || row.id === COFFEE_STOCK_ID)
+        ? rows.filter(
+            (row) =>
+              isDuoMenuProduct(row.id) ||
+              row.id === COFFEE_STOCK_ID ||
+              isCustomStockProduct(row.id),
+          )
         : rows;
       return visible.map((row) => ({
         ...row,

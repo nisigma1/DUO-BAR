@@ -28,7 +28,12 @@ export function Inventory() {
     return () => clearTimeout(timer);
   }, [feedback]);
   const onSaved = (product: CatalogProduct, message: string) => {
-    setData((current) => current?.map((p) => (p.id === product.id ? product : p)));
+    setData((current) => {
+      if (!current) return current;
+      return current.some((p) => p.id === product.id)
+        ? current.map((p) => (p.id === product.id ? product : p))
+        : [...current, product];
+    });
     setEditor(undefined);
     setSupply(false);
     setFeedback(message);
@@ -291,7 +296,17 @@ export function Inventory() {
         <SupplyPanel
           products={products}
           onClose={() => setSupply(false)}
-          onSaved={(product) => onSaved(product, 'Furnizimi u regjistrua.')}
+          onSaved={(product) => {
+            const created = !products.some((p) => p.id === product.id);
+            if (created) {
+              setCategory(product.categoryId);
+              setSearch('');
+            }
+            onSaved(
+              product,
+              created ? 'Produkti i ri dhe stoku u ruajtën.' : 'Furnizimi u regjistrua.',
+            );
+          }}
         />
       )}
       {loss && (

@@ -1,8 +1,9 @@
 import { amountError } from '../../domain/operatorInput';
 import { useContext, useRef, useState } from 'react';
-import type { CatalogProduct } from '../../domain/types';
+import type { CatalogProduct, CategoryCode } from '../../domain/types';
 import { parseEuro } from '../../domain/money';
 import { productDisplayName } from '../../domain/display';
+import { CATEGORIES } from '../../domain/definitions';
 import {
   canSupplyProduct,
   parseQuantity,
@@ -23,6 +24,7 @@ type SupplyProducts =
   | { products: SupplyProduct[] }
   | { products: undefined; error: boolean; retry: () => void };
 const loadSupplyProducts = () => window.fox.inventory.supplyProducts();
+const newProductOption = 'new-product';
 
 export function StaffSupplyPanel(props: SupplyActions) {
   const { data, error, retry } = useData(loadSupplyProducts);
@@ -33,9 +35,12 @@ export function StaffSupplyPanel(props: SupplyActions) {
 export function SupplyPanel(props: SupplyActions & SupplyProducts) {
   const { products, onClose, onSaved } = props;
   const { required: duo, duoMenu, operator } = useContext(OperatorContext);
-  const allowDrawerPayment = !duo || operator === 'OWNER';
+  const canManageStock = !duo || operator === 'OWNER';
   const eligible = products?.filter((product) => canSupplyProduct(product, duo)) ?? [];
+  const canSubmit = Boolean(products && (eligible.length > 0 || canManageStock));
   const [productId, setProductId] = useState('');
+  const [name, setName] = useState('');
+  const [categoryId, setCategoryId] = useState<CategoryCode>('PIJE');
   const [drawer, setDrawer] = useState(false),
     [paid, setPaid] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -51,6 +56,7 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
       return next;
     });
   const selected = eligible.find((p) => p.id === productId);
+  const creating = canManageStock && productId === newProductOption;
   const coffee = duo && selected?.id === COFFEE_STOCK_ID;
   const displayName = (product: SupplyProduct) =>
     duo && product.id === COFFEE_STOCK_ID
@@ -64,13 +70,14 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
   } catch {
     /* Show no result for invalid input. */
   }
+  const currentStock = selected?.stockQuantity ?? 0;
   const nextStock =
-    selected && amountPreview !== null ? (selected.stockQuantity ?? 0) + amountPreview : null;
+    (selected || creating) && amountPreview !== null ? currentStock + amountPreview : null;
   const validPreview =
     nextStock !== null &&
     Number.isFinite(nextStock) &&
     nextStock <= Number.MAX_SAFE_INTEGER &&
-    nextStock > (selected?.stockQuantity ?? 0);
+    nextStock > currentStock;
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (submitting.current) return;
@@ -86,9 +93,11 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
         ? 'Shkruaj kilogramët me deri në tri shifra pas presjes.'
         : 'Vendos një sasi të vlefshme, më të madhe se zero.';
     }
-    if (!selected) nextErrors.productId = 'Zgjidh produktin.';
+    if (creating) {
+      if (!name.trim()) nextErrors.name = 'Shkruaj emrin e produktit.';
+    } else if (!selected) nextErrors.productId = 'Zgjidh produktin.';
     let drawerPaymentCents: number | undefined;
-    if (drawer) {
+    if (canManageStock && drawer) {
       const issue = amountError(paid);
       if (issue) nextErrors.drawerPaymentCents = issue;
       else drawerPaymentCents = parseEuro(paid)!;
@@ -98,12 +107,18 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
     submitting.current = true;
     setBusy(true);
     try {
-      const result = await window.fox.inventory.addSupply({
+      const supply = {
         requestId,
-        productId,
         quantity: amount,
-        ...(drawer ? { drawerPaymentCents } : {}),
-      });
+        ...(drawerPaymentCents !== undefined ? { drawerPaymentCents } : {}),
+      };
+      const result = await (creating
+        ? window.fox.inventory.createProductWithStock({
+            ...supply,
+            name: name.trim(),
+            categoryId,
+          })
+        : window.fox.inventory.addSupply({ ...supply, productId }));
       if (result.ok) onSaved(result.data);
       else setErrors(result.errors);
     } catch (error) {
@@ -125,20 +140,15 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
           <Button disabled={busy} onClick={onClose}>
             Anulo
           </Button>
-          <Button
-            variant="primary"
-            type="submit"
-            form="supply-form"
-            disabled={busy || !eligible.length}
-          >
-            {busy ? 'Duke regjistruar…' : 'Shto stok'}
+          <Button variant="primary" type="submit" form="supply-form" disabled={busy || !canSubmit}>
+            {busy ? 'Duke regjistruar…' : creating ? 'Ruaj produktin dhe stokun' : 'Shto stok'}
           </Button>
         </>
       }
     >
       {!props.products ? (
         <DataState error={props.error} retry={props.retry} />
-      ) : !eligible.length ? (
+      ) : !canSubmit ? (
         <EmptyState
           title={duo ? 'Nuk ka produkte për furnizim' : 'Nuk ka produkte me stok aktiv'}
           helper={
@@ -168,6 +178,7 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
                 aria-describedby={errors.productId ? 'productId-error' : undefined}
               >
                 <option value="">Zgjidh produktin</option>
+                {canManageStock && <option value={newProductOption}>+ Produkt i ri</option>}
                 {eligible.map((p) => (
                   <option value={p.id} key={p.id}>
                     {displayName(p)}
@@ -176,15 +187,54 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
                 ))}
               </select>
             </Field>
+            {creating && (
+              <>
+                <Field id="new-product-name" label="Emri i produktit" error={errors.name}>
+                  <input
+                    id="new-product-name"
+                    value={name}
+                    maxLength={200}
+                    autoFocus
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      clearError('name');
+                    }}
+                    aria-invalid={Boolean(errors.name)}
+                    aria-describedby={errors.name ? 'new-product-name-error' : undefined}
+                  />
+                </Field>
+                <Field id="new-product-category" label="Kategoria" error={errors.categoryId}>
+                  <select
+                    id="new-product-category"
+                    value={categoryId}
+                    onChange={(e) => {
+                      setCategoryId(e.target.value as CategoryCode);
+                      clearError('categoryId');
+                    }}
+                    aria-invalid={Boolean(errors.categoryId)}
+                    aria-describedby={errors.categoryId ? 'new-product-category-error' : undefined}
+                  >
+                    {CATEGORIES.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <p className="field-helper">
+                  Çmimin e shitjes mund ta vendosësh te «Edito produktin».
+                </p>
+              </>
+            )}
             <Field
               id="quantity"
-              label={coffee ? 'Sasia (kg)' : duo ? 'Sasia (copë)' : 'Sasia'}
+              label={coffee ? 'Sasia (kg)' : duo || creating ? 'Sasia (copë)' : 'Sasia'}
               error={errors.quantity}
             >
               <input
                 id="quantity"
                 inputMode="decimal"
-                placeholder={duo ? (coffee ? 'p.sh. 0,5' : 'p.sh. 24') : undefined}
+                placeholder={duo || creating ? (coffee ? 'p.sh. 0,5' : 'p.sh. 24') : undefined}
                 value={quantity}
                 onChange={(e) => {
                   setQuantity(e.target.value);
@@ -194,7 +244,7 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
                 aria-describedby={errors.quantity ? 'quantity-error' : undefined}
               />
             </Field>
-            {allowDrawerPayment && (
+            {canManageStock && (
               <>
                 <label className="finance-check">
                   <input
@@ -237,18 +287,20 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
               <dl>
                 <div>
                   <dt>Produkti</dt>
-                  <dd>{selected ? displayName(selected) : '—'}</dd>
+                  <dd>{creating ? name.trim() || '—' : selected ? displayName(selected) : '—'}</dd>
                 </div>
                 <div>
                   <dt>Stoku tani</dt>
                   <dd>
-                    {selected
-                      ? selected.stockQuantity === null
-                        ? 'Pa vendosur'
-                        : coffee
-                          ? coffeeStockLabel(selected.stockQuantity)
-                          : selected.stockQuantity
-                      : '—'}
+                    {creating
+                      ? 0
+                      : selected
+                        ? selected.stockQuantity === null
+                          ? 'Pa vendosur'
+                          : coffee
+                            ? coffeeStockLabel(selected.stockQuantity)
+                            : selected.stockQuantity
+                        : '—'}
                   </dd>
                 </div>
                 <div>

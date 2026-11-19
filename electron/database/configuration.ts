@@ -4,12 +4,14 @@ import {
   validateProductUpdate,
   validateSupply,
   type MutationResult,
+  type NewStockProductRequest,
   type ProductUpdate,
   type SupplyRequest,
 } from '../../src/domain/configuration';
 import type { CatalogProduct, Settings } from '../../src/domain/types';
 import type { createRepositories } from './repositories';
 import { COFFEE_STOCK_ID, coffeePortions, isCoffee } from '../../src/domain/operators';
+import { CUSTOM_STOCK_PRODUCT_PREFIX } from './duoCatalog';
 import { exactQuantity, assertCashTotals } from './numericSafety';
 export function createConfigurationService(
   db: Database.Database,
@@ -22,7 +24,7 @@ export function createConfigurationService(
     errors,
     message: 'Kontrollo të dhënat e vendosura.',
   });
-  return {
+  const configuration = {
     archiveProduct(input: unknown): MutationResult<string> {
       const reject = (message: string): MutationResult<string> => ({
         ok: false,
@@ -100,6 +102,88 @@ export function createConfigurationService(
             now: new Date().toISOString(),
           });
           return { ok: true, data: find(value.id)! } as const;
+        })
+        .immediate();
+    },
+    createProductWithStock(input: unknown): MutationResult<CatalogProduct> {
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        Array.isArray(input) ||
+        Object.keys(input).some(
+          (key) =>
+            !['requestId', 'name', 'categoryId', 'quantity', 'drawerPaymentCents'].includes(key),
+        )
+      )
+        return failure({ form: 'Kërkesa nuk është e vlefshme.' });
+
+      const { requestId, name, categoryId, quantity, drawerPaymentCents } =
+        input as NewStockProductRequest;
+      const errors = {
+        ...validateProductUpdate({
+          id: CUSTOM_STOCK_PRODUCT_PREFIX,
+          name,
+          categoryId,
+          sellingPriceCents: null,
+          purchaseCostCents: null,
+          trackInventory: true,
+          lowStockThreshold: null,
+          active: true,
+        }),
+        ...validateSupply({
+          requestId,
+          productId: CUSTOM_STOCK_PRODUCT_PREFIX,
+          quantity,
+          drawerPaymentCents,
+        }),
+      };
+      if (typeof name === 'string' && /[\u0000-\u001f\u007f]/.test(name))
+        errors.name = 'Shkruaj emrin e produktit në një rresht.';
+      if (Object.keys(errors).length) return failure(errors);
+
+      const token = requestId.toLowerCase();
+      const productId = CUSTOM_STOCK_PRODUCT_PREFIX + token;
+      const productName = name.trim().normalize('NFC');
+      const key = `stock_product_request:${token}`;
+      const fingerprint = JSON.stringify([
+        productName,
+        categoryId,
+        quantity,
+        drawerPaymentCents ?? null,
+      ]);
+      const conflict = () =>
+        failure({
+          form: 'Kjo kërkesë është përdorur me të dhëna të tjera. Hap një furnizim të ri.',
+        });
+      return db
+        .transaction(() => {
+          const prior = db.prepare('SELECT value FROM settings WHERE key=?').pluck().get(key);
+          if (prior !== undefined) {
+            if (prior !== fingerprint) return conflict();
+            const existing = find(productId);
+            return existing
+              ? ({ ok: true, data: existing } as const)
+              : failure({ form: 'Ky produkt është hequr nga stoku.' });
+          }
+          if (db.prepare('SELECT 1 FROM inventory_movements WHERE id=?').get(token))
+            return conflict();
+
+          const now = new Date().toISOString();
+          db.prepare(
+            'INSERT INTO products (id,name,category_id,track_inventory,active,created_at,updated_at) VALUES (?,?,?,1,1,?,?)',
+          ).run(productId, productName, categoryId, now, now);
+          db.prepare(
+            'INSERT INTO inventory_balances (product_id,quantity,updated_at) VALUES (?,NULL,?)',
+          ).run(productId, now);
+          const supplied = configuration.addSupply({
+            requestId: token,
+            productId,
+            quantity,
+            drawerPaymentCents,
+          });
+          if (!supplied.ok) throw new Error('Could not record initial product supply');
+          db.prepare('INSERT INTO settings (key,value) VALUES (?,?)').run(key, fingerprint);
+          return supplied;
         })
         .immediate();
     },
@@ -216,4 +300,5 @@ export function createConfigurationService(
         .immediate();
     },
   };
+  return configuration;
 }

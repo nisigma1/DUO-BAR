@@ -155,9 +155,16 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
       );
 
       const supply = { requestId: randomUUID(), productId: 'PIJE-1', quantity: 200 };
+      const newProduct = {
+        requestId: randomUUID(),
+        name: 'Pije e re',
+        categoryId: 'PIJE',
+        quantity: 15,
+      };
       expect(() => call(IPC.tables)).toThrow('nuk lejohet');
       expect(() => call(IPC.supplyProducts)).toThrow('nuk lejohet');
       expect(() => call(IPC.addSupply, supply)).toThrow('nuk lejohet');
+      expect(() => call(IPC.createProductWithStock, newProduct)).toThrow('nuk lejohet');
       expect(() => call(IPC.completeOrder, { orderId, expectedRevision })).toThrow('nuk lejohet');
       for (let attempt = 0; attempt < 4; attempt++) {
         expect(() => call(OPERATOR_IPC.login, { id: 'OWNER', pin: workerPin })).toThrow(
@@ -169,6 +176,7 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
       });
       expect(call(IPC.tables)).toEqual([]);
       expect(() => call(IPC.archiveProduct, 'UJE-1')).toThrow('nuk lejohet');
+      expect(() => call(IPC.createProductWithStock, newProduct)).toThrow('nuk lejohet');
       expect(call(OPERATOR_IPC.catalog)).toContainEqual(
         expect.objectContaining({ id: 'PIJE-1', purchaseCostCents: null }),
       );
@@ -242,6 +250,7 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
       expect(call(OPERATOR_IPC.login, { id: 'PM', pin: workerPin })).toMatchObject({
         operator: 'PM',
       });
+      expect(() => call(IPC.createProductWithStock, newProduct)).toThrow('nuk lejohet');
       expect(
         call(IPC.addSupply, { ...supply, requestId: randomUUID(), quantity: 6_000 }),
       ).toMatchObject({
@@ -258,6 +267,10 @@ try { & './scripts/release/provision-duo-pins.ps1' } catch {
       now += 60001;
       expect(call(OPERATOR_IPC.login, { id: 'OWNER', pin: ownerPin })).toMatchObject({
         operator: 'OWNER',
+      });
+      expect(call(IPC.createProductWithStock, newProduct)).toMatchObject({
+        ok: true,
+        data: { name: newProduct.name, stockQuantity: newProduct.quantity },
       });
       expect(call(IPC.archiveProduct, 'UJE-1')).toMatchObject({ ok: true });
       expect(call(OPERATOR_IPC.report, 'DAY')).toMatchObject({ totalCents: 150 });

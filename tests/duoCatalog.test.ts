@@ -53,17 +53,15 @@ it('adds the photographed coffees with kg supplies, distinct stocks, and stable 
       {
         ...prior,
         listProducts: (forOrders) =>
-          prior
-            .listProducts(forOrders)
-            .map((product) =>
-              product.id === 'KAFE-2'
-                ? {
-                    ...product,
-                    stockQuantity: coffeeBalance(db, 'KAFE-2'),
-                    coffeeRecipe: { stockProductId: 'KAFE-2', doses: 1 },
-                  }
-                : product,
-            ),
+          prior.listProducts(forOrders).map((product) =>
+            product.id === 'KAFE-2'
+              ? {
+                  ...product,
+                  stockQuantity: coffeeBalance(db, 'KAFE-2'),
+                  coffeeRecipe: { stockProductId: 'KAFE-2', doses: 1 },
+                }
+              : product,
+          ),
       },
       {
         operator: () => 'OWNER',

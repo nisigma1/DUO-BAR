@@ -4,6 +4,7 @@ import type { CatalogProduct, CategoryCode } from '../../domain/types';
 import { parseEuro } from '../../domain/money';
 import { productDisplayName } from '../../domain/display';
 import { CATEGORIES } from '../../domain/definitions';
+import { hotDrinkNameKey, suggestHotDrinkCategory } from '../../domain/hotDrinks';
 import {
   canSupplyProduct,
   parseQuantity,
@@ -40,7 +41,7 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
   const canSubmit = Boolean(products && (eligible.length > 0 || canManageStock));
   const [productId, setProductId] = useState('');
   const [name, setName] = useState('');
-  const [categoryId, setCategoryId] = useState<CategoryCode>('PIJE');
+  const [manualCategory, setCategoryId] = useState<CategoryCode>();
   const [drawer, setDrawer] = useState(false),
     [paid, setPaid] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -55,9 +56,25 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
       delete next[key];
       return next;
     });
-  const selected = eligible.find((p) => p.id === productId);
   const creating = canManageStock && productId === newProductOption;
-  const coffee = duo && selected?.id === COFFEE_STOCK_ID;
+  const categoryId =
+    manualCategory ?? (duoMenu ? suggestHotDrinkCategory(name) : undefined) ?? 'PIJE';
+  const matchedCoffee =
+    creating && duoMenu && categoryId === 'KAFE' && name.trim()
+      ? eligible.find(
+          (product) =>
+            product.coffeeRecipe && hotDrinkNameKey(product.name) === hotDrinkNameKey(name),
+        )
+      : undefined;
+  const selected = matchedCoffee ?? eligible.find((p) => p.id === productId);
+  const coffee = Boolean(
+    selected?.coffeeRecipe ||
+      (duo && selected?.id === COFFEE_STOCK_ID) ||
+      (duoMenu && creating && categoryId === 'KAFE'),
+  );
+  const stockProduct = selected?.coffeeRecipe
+    ? products?.find((item) => item.id === selected.coffeeRecipe?.stockProductId)
+    : selected;
   const displayName = (product: SupplyProduct) =>
     duo && product.id === COFFEE_STOCK_ID
       ? 'Kafe (stok i përbashkët)'
@@ -70,7 +87,7 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
   } catch {
     /* Show no result for invalid input. */
   }
-  const currentStock = selected?.stockQuantity ?? 0;
+  const currentStock = stockProduct?.stockQuantity ?? 0;
   const nextStock =
     (selected || creating) && amountPreview !== null ? currentStock + amountPreview : null;
   const validPreview =
@@ -112,13 +129,13 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
         quantity: amount,
         ...(drawerPaymentCents !== undefined ? { drawerPaymentCents } : {}),
       };
-      const result = await (creating
+      const result = await (creating && !matchedCoffee
         ? window.fox.inventory.createProductWithStock({
             ...supply,
             name: name.trim(),
             categoryId,
           })
-        : window.fox.inventory.addSupply({ ...supply, productId }));
+        : window.fox.inventory.addSupply({ ...supply, productId: selected!.id }));
       if (result.ok) onSaved(result.data);
       else setErrors(result.errors);
     } catch (error) {
@@ -141,7 +158,11 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
             Anulo
           </Button>
           <Button variant="primary" type="submit" form="supply-form" disabled={busy || !canSubmit}>
-            {busy ? 'Duke regjistruar…' : creating ? 'Ruaj produktin dhe stokun' : 'Shto stok'}
+            {busy
+              ? 'Duke regjistruar…'
+              : creating && !matchedCoffee
+                ? 'Ruaj produktin dhe stokun'
+                : 'Shto stok'}
           </Button>
         </>
       }
@@ -216,13 +237,17 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
                   >
                     {CATEGORIES.map((category) => (
                       <option key={category.id} value={category.id}>
-                        {category.name}
+                        {duoMenu && category.id === 'CAJ'
+                          ? 'Çaj / pije të tjera të ngrohta'
+                          : category.name}
                       </option>
                     ))}
                   </select>
                 </Field>
                 <p className="field-helper">
-                  Çmimin e shitjes mund ta vendosësh te «Edito produktin».
+                  {matchedCoffee
+                    ? `Do të shtohet stok te «${matchedCoffee.name}».`
+                    : 'Çmimin e shitjes mund ta vendosësh te «Edito produktin».'}
                 </p>
               </>
             )}
@@ -292,14 +317,14 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
                 <div>
                   <dt>Stoku tani</dt>
                   <dd>
-                    {creating
+                    {creating && !matchedCoffee
                       ? 0
-                      : selected
-                        ? selected.stockQuantity === null
+                      : stockProduct
+                        ? stockProduct.stockQuantity === null
                           ? 'Pa vendosur'
                           : coffee
-                            ? coffeeStockLabel(selected.stockQuantity)
-                            : selected.stockQuantity
+                            ? coffeeStockLabel(stockProduct.stockQuantity)
+                            : stockProduct.stockQuantity
                         : '—'}
                   </dd>
                 </div>
@@ -321,13 +346,13 @@ export function SupplyPanel(props: SupplyActions & SupplyProducts) {
                 </div>
               </dl>
             </section>
-            {selected?.stockQuantity === null && (
+            {stockProduct?.stockQuantity === null && (
               <p className="notice warning-notice">
                 Kjo është vendosja fillestare e stokut. Sasia e regjistruar do të bëhet stoku
                 aktual; verifiko sasinë përpara konfirmimit.
               </p>
             )}
-            {duo && selected && selected.trackInventory !== true && (
+            {duo && stockProduct && stockProduct.trackInventory !== true && (
               <p className="field-helper">
                 Nëse ndjekja e stokut mbetet e fikur pas furnizimit, pronari mund ta aktivizojë te
                 «Edito produktin».

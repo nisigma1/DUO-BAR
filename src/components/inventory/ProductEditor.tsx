@@ -3,6 +3,7 @@ import { useRef, useState } from 'react';
 import type { CatalogProduct, CategoryCode } from '../../domain/types';
 import { CATEGORIES } from '../../domain/definitions';
 import { parseEuro, moneyInput, formatMoney } from '../../domain/money';
+import { coffeeStockLabel } from '../../domain/operators';
 import {
   parseQuantity,
   stockState,
@@ -356,7 +357,7 @@ export function ProductEditor({
               </Field>
               <Field
                 id="lowStockThreshold"
-                label="Njofto kur mbeten"
+                label={product.coffeeRecipe ? 'Njofto kur mbeten (doza)' : 'Njofto kur mbeten'}
                 error={tracking === 'yes' ? errors.lowStockThreshold : undefined}
               >
                 <input
@@ -384,7 +385,11 @@ export function ProductEditor({
               <span>Stoku tani</span>
               <div>
                 {tracking === 'yes' && product.stockQuantity !== null && (
-                  <strong>{product.stockQuantity}</strong>
+                  <strong>
+                    {product.coffeeRecipe
+                      ? coffeeStockLabel(product.stockQuantity)
+                      : product.stockQuantity}
+                  </strong>
                 )}
                 <StockBadge state={currentStock} />
               </div>

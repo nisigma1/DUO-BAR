@@ -20,6 +20,9 @@ import {
 import type { MutationResult } from '../../src/domain/configuration';
 import { readSalesReport } from './salesReports';
 import { COFFEE_STOCK_ID, coffeePortions, isCoffee } from '../../src/domain/operators';
+import { duoCoffeeRecipe } from '../../src/domain/hotDrinks';
+import type { CategoryCode } from '../../src/domain/types';
+import { HOT_DRINK_SETUP } from './duoCatalog';
 import { effectiveExpenses, expenseRange, mapExpense, safeMoney } from './financeQueries';
 import { logError } from '../main/logging';
 import { exactQuantity, exactQuantityCost, assertCashTotals } from './numericSafety';
@@ -386,37 +389,43 @@ export function createFinanceService(
         )
           throw Error('Sasia duhet të jetë më e madhe se zero.');
         const inputValue = v as unknown as LossInput;
-        const coffee = duo && isCoffee(inputValue.productId);
-        if (coffee && inputValue.productId !== COFFEE_STOCK_ID)
-          throw Error('Përdor stokun e përbashkët të kafesë.');
-        const value = coffee
-          ? { ...inputValue, quantity: coffeePortions(inputValue.quantity) }
-          : inputValue;
         const request = JSON.stringify(v);
         let capacity: FinancialCapacity | undefined;
         const saved = db
           .transaction(() => {
             const existing = db
               .prepare('SELECT request_json FROM stock_losses WHERE id=?')
-              .get(value.requestId) as { request_json: string } | undefined;
+              .get(inputValue.requestId) as { request_json: string } | undefined;
             if (existing) {
               if (existing.request_json !== request)
                 throw Error('Ky veprim është regjistruar me të dhëna të tjera.');
-              return db.prepare(`${lossSelect} WHERE id=?`).get(value.requestId) as LossRecord;
+              return db.prepare(`${lossSelect} WHERE id=?`).get(inputValue.requestId) as LossRecord;
             }
             const p = db
               .prepare(
-                'SELECT p.name,p.purchase_cost_cents AS cost,p.track_inventory AS tracking,b.quantity FROM products p JOIN inventory_balances b ON b.product_id=p.id WHERE p.id=? AND NOT EXISTS (SELECT 1 FROM settings s WHERE s.key=?)',
+                'SELECT p.id,p.name,p.category_id AS categoryId,p.purchase_cost_cents AS cost,p.track_inventory AS tracking,b.quantity FROM products p JOIN inventory_balances b ON b.product_id=p.id WHERE p.id=? AND NOT EXISTS (SELECT 1 FROM settings s WHERE s.key=?)',
               )
-              .get(value.productId, `archived_product:${value.productId}`) as
+              .get(inputValue.productId, `archived_product:${inputValue.productId}`) as
               | {
+                  id: string;
                   name: string;
+                  categoryId: CategoryCode;
                   cost: number | null;
                   tracking: number | null;
                   quantity: number | null;
                 }
               | undefined;
             if (!p || p.tracking !== 1) throw Error('Zgjidh produkt me ndjekje stoku.');
+            const recipe =
+              duo && db.prepare('SELECT 1 FROM settings WHERE key=?').get(HOT_DRINK_SETUP)
+                ? duoCoffeeRecipe(p)
+                : undefined;
+            const coffee = Boolean(recipe || (duo && isCoffee(p.id)));
+            if (coffee && p.id !== (recipe?.stockProductId ?? COFFEE_STOCK_ID))
+              throw Error('Përdor stokun e përbashkët të kafesë.');
+            const value = coffee
+              ? { ...inputValue, quantity: coffeePortions(inputValue.quantity) }
+              : inputValue;
             if (p.quantity === null) throw Error('Stoku është pa vendosur.');
             if (p.quantity < value.quantity || p.quantity - value.quantity === p.quantity)
               throw Error('Stok i pamjaftueshëm ose sasi jashtë kufirit.');

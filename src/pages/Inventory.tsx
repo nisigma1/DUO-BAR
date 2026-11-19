@@ -4,6 +4,7 @@ import { DataState } from '../components/common/DataState';
 import { productDisplayName } from '../domain/display';
 import { formatMoney } from '../domain/money';
 import { CATEGORIES } from '../domain/definitions';
+import { drinkCategory, duoDrinkCategories } from '../domain/hotDrinks';
 import { inventorySummary, stockState, unitProfit } from '../domain/configuration';
 import type { CatalogProduct, CategoryCode } from '../domain/types';
 import { Button, EmptyState, Icon, PageHeader, StockBadge } from '../components/common/Controls';
@@ -44,20 +45,21 @@ export function Inventory() {
       .replace(/[\u0300-\u036f]/g, '')
       .toLocaleLowerCase('sq-AL');
   const categories = duoMenu
-    ? CATEGORIES.filter((category) =>
-        products?.some((product) => product.categoryId === category.id),
+    ? duoDrinkCategories.filter((category) =>
+        products?.some((product) => drinkCategory(product.categoryId, true) === category.id),
       )
     : CATEGORIES;
   const filtered =
     products?.filter(
       (p) =>
-        (!category || p.categoryId === category) &&
+        (!category || drinkCategory(p.categoryId, Boolean(duoMenu)) === category) &&
         normalize(p.name).includes(normalize(search.trim())),
     ) ?? [];
   const summary = products
     ? inventorySummary(
         products.map((product) =>
-          duo && isCoffee(product.id) && product.id !== COFFEE_STOCK_ID
+          (product.coffeeRecipe && product.coffeeRecipe.stockProductId !== product.id) ||
+          (!product.coffeeRecipe && duo && isCoffee(product.id) && product.id !== COFFEE_STOCK_ID)
             ? { ...product, trackInventory: false }
             : product,
         ),
@@ -197,16 +199,25 @@ export function Inventory() {
                       <td className="product-name">
                         {productDisplayName(product.name, duo || Boolean(duoMenu))}
                       </td>
-                      <td>{product.categoryName}</td>
+                      <td>
+                        {duoMenu && ['KAFE', 'CAJ'].includes(product.categoryId)
+                          ? 'Pijet e ngrohta'
+                          : product.categoryName}
+                      </td>
                       <td className="stock-cell numeric">
-                        {duo && isCoffee(product.id) && product.id !== COFFEE_STOCK_ID ? (
+                        {(product.coffeeRecipe &&
+                          product.coffeeRecipe.stockProductId !== product.id) ||
+                        (!product.coffeeRecipe &&
+                          duo &&
+                          isCoffee(product.id) &&
+                          product.id !== COFFEE_STOCK_ID) ? (
                           'Stok i përbashkët'
                         ) : (
                           <>
                             {(duo || product.trackInventory === true) &&
                               product.stockQuantity !== null && (
                                 <strong>
-                                  {duo && product.id === COFFEE_STOCK_ID
+                                  {product.coffeeRecipe || (duo && product.id === COFFEE_STOCK_ID)
                                     ? coffeeStockLabel(product.stockQuantity)
                                     : product.stockQuantity}
                                 </strong>
@@ -281,7 +292,9 @@ export function Inventory() {
           onArchived={(id) => {
             if (
               category &&
-              products.filter((p) => p.categoryId === category).every((p) => p.id === id)
+              products
+                .filter((p) => drinkCategory(p.categoryId, Boolean(duoMenu)) === category)
+                .every((p) => p.id === id)
             )
               setCategory('');
             setData((current) => current?.filter((p) => p.id !== id));
@@ -299,7 +312,7 @@ export function Inventory() {
           onSaved={(product) => {
             const created = !products.some((p) => p.id === product.id);
             if (created) {
-              setCategory(product.categoryId);
+              setCategory(drinkCategory(product.categoryId, Boolean(duoMenu)));
               setSearch('');
             }
             onSaved(

@@ -4,7 +4,8 @@ import type { CheckoutErrorCode, CheckoutResult } from '../../src/domain/types';
 import type { createOrderService } from './orders';
 import { createReceiptRepository } from '../receipts/repository';
 import { logError } from '../main/logging';
-import { COFFEE_STOCK_ID, isCoffee } from '../../src/domain/operators';
+import { isCoffee } from '../../src/domain/operators';
+import { LEGACY_COFFEE_RECIPE, type CoffeeRecipe } from '../../src/domain/hotDrinks';
 import { exactQuantity, assertCashTotals } from './numericSafety';
 import {
   prepareFinancialCapacity,
@@ -94,34 +95,37 @@ export function createCheckoutService(
               quantity: costs.reduce((n, i) => n + BigInt(i.quantity), 0n),
               missingCost: BigInt(costs.filter((i) => i.unit_cost_cents === null).length),
             });
+            const recorded = new Map(
+              (hasDuoLines
+                ? (db
+                    .prepare(
+                      `SELECT i.id,d.coffee_portions AS portions,s.value AS recipe
+                     FROM order_items i JOIN duo_order_lines d ON d.item_id=i.id
+                     LEFT JOIN settings s ON s.key='duo_coffee_item:' || i.id WHERE i.order_id=?`,
+                    )
+                    .all(row.id) as { id: string; portions: number; recipe: string | null }[])
+                : []
+              ).map((line) => [line.id, line] as const),
+            );
+            const usesCoffeeStock = duo || [...recorded.values()].some((line) => line.portions > 0);
             const quantities = new Map<string, { name: string; quantity: number }>();
             for (const item of workspace.order.items) {
-              const previous = quantities.get(item.productId)?.quantity ?? 0;
-              const quantity = previous + item.quantity;
+              const saved = recorded.get(item.id);
+              const recipe = saved?.recipe
+                ? (JSON.parse(saved.recipe) as CoffeeRecipe)
+                : usesCoffeeStock && isCoffee(item.productId)
+                  ? LEGACY_COFFEE_RECIPE
+                  : undefined;
+              const reserved = recipe ? (saved?.portions ?? 0) : 0;
+              if (!Number.isSafeInteger(reserved) || reserved < 0 || reserved > item.quantity)
+                return fail('CHECKOUT_FAILED', 'Sasia e konfirmuar e kafesë nuk përputhet.');
+              const productId = recipe?.stockProductId ?? item.productId;
+              const needed = (item.quantity - reserved) * (recipe?.doses ?? 1);
+              if (needed === 0) continue;
+              const quantity = (quantities.get(productId)?.quantity ?? 0) + needed;
               if (!Number.isSafeInteger(quantity))
                 return fail('CHECKOUT_FAILED', 'Sasia tejkalon kufirin e lejuar.');
-              quantities.set(item.productId, { name: item.name, quantity });
-            }
-            const recorded = hasDuoLines
-              ? (db
-                  .prepare(
-                    'SELECT i.product_id AS id,SUM(d.coffee_portions) AS portions FROM order_items i JOIN duo_order_lines d ON d.item_id=i.id WHERE i.order_id=? GROUP BY i.product_id',
-                  )
-                  .all(row.id) as { id: string; portions: number }[])
-              : [];
-            if (duo || recorded.some((line) => line.portions > 0)) {
-              let remaining = 0;
-              for (const [productId, item] of quantities) {
-                if (!isCoffee(productId)) continue;
-                const reserved = recorded.find((line) => line.id === productId)?.portions ?? 0;
-                if (!Number.isSafeInteger(reserved) || reserved < 0 || reserved > item.quantity)
-                  return fail('CHECKOUT_FAILED', 'Sasia e konfirmuar e kafesë nuk përputhet.');
-                remaining += item.quantity - reserved;
-                quantities.delete(productId);
-              }
-              if (!Number.isSafeInteger(remaining))
-                return fail('CHECKOUT_FAILED', 'Sasia e kafesë është jashtë kufirit.');
-              if (remaining) quantities.set(COFFEE_STOCK_ID, { name: 'Kafe', quantity: remaining });
+              quantities.set(productId, { name: item.name, quantity });
             }
             const deductions: { productId: string; quantity: number; balance: number }[] = [];
             // Preflight every product before any write. Existing inactive lines retain their snapshots.

@@ -3,6 +3,8 @@ import type { CatalogProduct, Category, CategoryCode } from '../../domain/types'
 import type { OrderDraft } from '../../domain/orderDraft';
 import { productDisplayName } from '../../domain/display';
 import { formatMoney } from '../../domain/money';
+import { drinkCategory, duoDrinkCategories } from '../../domain/hotDrinks';
+import { coffeeStockLabel } from '../../domain/operators';
 import { Button, Icon } from '../common/Controls';
 
 function productUnavailable(product: CatalogProduct) {
@@ -11,7 +13,8 @@ function productUnavailable(product: CatalogProduct) {
   if (product.trackInventory === false) return;
   if (product.trackInventory === null) return 'Konfiguro stokun';
   if (product.stockQuantity === null) return 'Stok pa vendosur';
-  if (product.stockQuantity <= 0) return 'Pa stok';
+  if (product.stockQuantity <= 0 || product.stockQuantity < (product.coffeeRecipe?.doses ?? 0))
+    return 'Pa stok';
 }
 
 export function draftLineIssue(
@@ -54,9 +57,14 @@ export function OrderDraftEditor({
   const [category, setCategory] = useState<CategoryCode | '' | undefined>(
     showStock ? '' : undefined,
   );
-  const activeCategories = categories;
+  const group = (id: CategoryCode) => drinkCategory(id, showStock);
+  const activeCategories = showStock
+    ? duoDrinkCategories.filter((item) =>
+        products.some((product) => group(product.categoryId) === item.id),
+      )
+    : categories;
   const categoryIds = new Set(activeCategories.map((item) => item.id));
-  const catalog = products.filter((product) => categoryIds.has(product.categoryId));
+  const catalog = products.filter((product) => categoryIds.has(group(product.categoryId)));
   const activeProducts = catalog.filter((product) => product.active);
   const needsSetup = activeProducts.length === 0;
   const menu = activeProducts;
@@ -64,13 +72,13 @@ export function OrderDraftEditor({
     category === '' || (category && categoryIds.has(category))
       ? category
       : (activeCategories.find((item) =>
-          activeProducts.some((product) => product.categoryId === item.id),
+          activeProducts.some((product) => group(product.categoryId) === item.id),
         )?.id ?? '');
   const search = query.trim().toLowerCase();
   const visible = menu.filter((product) =>
     search
       ? productDisplayName(product.name, hideVolume).toLowerCase().includes(search)
-      : !selectedCategory || product.categoryId === selectedCategory,
+      : !selectedCategory || group(product.categoryId) === selectedCategory,
   );
   const lines = new Map(draft.items.map((item) => [item.productId, item]));
 
@@ -168,7 +176,7 @@ export function OrderDraftEditor({
                 {showStock && (
                   <p className="order-stock">
                     {product.trackInventory && product.stockQuantity !== null
-                      ? `Stoku: ${product.stockQuantity}`
+                      ? `Stoku: ${product.coffeeRecipe ? coffeeStockLabel(product.stockQuantity) : product.stockQuantity}`
                       : 'Stok pa numëruar'}
                   </p>
                 )}

@@ -86,6 +86,7 @@ export interface InventoryBalance {
 export interface CatalogProduct extends Product {
   categoryName: string;
   stockQuantity: number | null;
+  coffeeRecipe?: import('./hotDrinks').CoffeeRecipe;
 }
 export interface Order {
   id: string;

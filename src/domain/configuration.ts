@@ -28,12 +28,12 @@ export type NewStockProductRequest = Omit<SupplyRequest, 'productId'> & {
 };
 export type SupplyProduct = Pick<
   CatalogProduct,
-  'id' | 'name' | 'active' | 'trackInventory' | 'stockQuantity'
+  'id' | 'name' | 'active' | 'trackInventory' | 'stockQuantity' | 'coffeeRecipe'
 >;
 
 export function canSupplyProduct(product: SupplyProduct, duo: boolean) {
   return duo
-    ? !isCoffee(product.id) || product.id === COFFEE_STOCK_ID
+    ? Boolean(product.coffeeRecipe) || !isCoffee(product.id) || product.id === COFFEE_STOCK_ID
     : product.active && product.trackInventory === true;
 }
 
@@ -58,6 +58,7 @@ export function validateProductUpdate(input: unknown): FieldErrors {
           'stockQuantity',
           'createdAt',
           'updatedAt',
+          'coffeeRecipe',
         ].includes(key),
     )
   )

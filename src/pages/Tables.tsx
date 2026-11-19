@@ -319,7 +319,14 @@ export function Tables({ stockRevision }: { stockRevision: number }) {
       settleDraft(tableId, input.requestId, true);
       const saved = result.data;
       applyWorkspace(saved, 'Porosia u ruajt.');
-      if (session.required && draft.items.some((item) => isCoffee(item.productId)))
+      if (
+        session.required &&
+        draft.items.some(
+          (item) =>
+            isCoffee(item.productId) ||
+            catalog.data?.find((p) => p.id === item.productId)?.coffeeRecipe,
+        )
+      )
         catalog.refresh();
       return saved;
     } catch {
@@ -624,7 +631,9 @@ export function Tables({ stockRevision }: { stockRevision: number }) {
                             const disabled = !canMutate || hasDraft || tablePending;
                             const input = { tableId: table.id, itemId: item.id };
                             const name = productDisplayName(item.name, hideVolume);
-                            const changesCoffeeStock = isCoffee(item.productId);
+                            const changesCoffeeStock = Boolean(
+                              isCoffee(item.productId) || session.duoMenu,
+                            );
                             return (
                               <div className="order-item" key={item.id} data-order-item={item.id}>
                                 <div className="order-item-name">

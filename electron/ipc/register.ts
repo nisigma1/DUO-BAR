@@ -190,13 +190,16 @@ export function registerIpc(
     [
       IPC.supplyProducts,
       () =>
-        repositories.listProducts().map(({ id, name, active, trackInventory, stockQuantity }) => ({
-          id,
-          name,
-          active,
-          trackInventory,
-          stockQuantity,
-        })),
+        repositories
+          .listProducts()
+          .map(({ id, name, active, trackInventory, stockQuantity, coffeeRecipe }) => ({
+            id,
+            name,
+            active,
+            trackInventory,
+            stockQuantity,
+            ...(coffeeRecipe ? { coffeeRecipe } : {}),
+          })),
     ],
     [
       OPERATOR_IPC.catalog,

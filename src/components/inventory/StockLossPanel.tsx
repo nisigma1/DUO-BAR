@@ -22,7 +22,11 @@ export function StockLossPanel({
 }) {
   const duo = useContext(OperatorContext).required;
   const eligible = products.filter(
-      (p) => p.trackInventory === true && (!duo || !isCoffee(p.id) || p.id === COFFEE_STOCK_ID),
+      (p) =>
+        p.trackInventory === true &&
+        (p.coffeeRecipe
+          ? p.coffeeRecipe.stockProductId === p.id
+          : !duo || !isCoffee(p.id) || p.id === COFFEE_STOCK_ID),
     ),
     [productId, setProduct] = useState(''),
     [quantity, setQuantity] = useState(''),
@@ -33,7 +37,7 @@ export function StockLossPanel({
     [requestId] = useState(() => crypto.randomUUID());
   const submitting = useRef(false),
     selected = eligible.find((p) => p.id === productId);
-  const coffee = duo && selected?.id === COFFEE_STOCK_ID;
+  const coffee = Boolean(selected?.coffeeRecipe || (duo && selected?.id === COFFEE_STOCK_ID));
   useFieldErrorFocus(errors, busy, 'loss-form');
   async function save(e: React.FormEvent) {
     e.preventDefault();

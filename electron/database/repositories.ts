@@ -3,10 +3,16 @@ import type Database from 'better-sqlite3';
 import type { TableSummary, CatalogProduct, ReportSummary, Settings } from '../../src/domain/types';
 
 import { COFFEE_STOCK_ID, isCoffee } from '../../src/domain/operators';
-import { coffeeBalance } from './duoCoffee';
-import { isCustomStockProduct, isDuoMenuProduct } from './duoCatalog';
+import { duoCoffeeRecipe, LEGACY_COFFEE_RECIPE } from '../../src/domain/hotDrinks';
+import { HOT_DRINK_SETUP, isCustomStockProduct, isDuoMenuProduct } from './duoCatalog';
 
 export function createRepositories(db: Database.Database, duo = false, duoMenu = false) {
+  const configuredHot = duoMenu
+    ? db.prepare('SELECT value FROM settings WHERE key=?').pluck().get(HOT_DRINK_SETUP)
+    : undefined;
+  const hotIds = new Set<string>(
+    typeof configuredHot === 'string' ? JSON.parse(configuredHot) : [],
+  );
   return {
     getSalesReport: (period: unknown) => readSalesReport(db, period),
     listTables(): TableSummary[] {
@@ -44,26 +50,39 @@ export function createRepositories(db: Database.Database, duo = false, duoMenu =
         active: number;
         trackInventory: number | null;
       })[];
-      const sharedCoffee = duo && forOrders ? coffeeBalance(db) : null;
+      const byId = new Map(rows.map((row) => [row.id, row]));
       const visible = duoMenu
         ? rows.filter(
             (row) =>
               isDuoMenuProduct(row.id) ||
               row.id === COFFEE_STOCK_ID ||
+              hotIds.has(row.id) ||
+              (hotIds.size > 0 && row.categoryId === 'CAJ' && row.sellingPriceCents !== null) ||
               isCustomStockProduct(row.id),
           )
         : rows;
-      return visible.map((row) => ({
-        ...row,
-        active: row.active === 1,
-        trackInventory:
-          duo && forOrders && isCoffee(row.id)
-            ? true
-            : row.trackInventory === null
-              ? null
-              : row.trackInventory === 1,
-        stockQuantity: duo && forOrders && isCoffee(row.id) ? sharedCoffee : row.stockQuantity,
-      }));
+      return visible.map((row) => {
+        const coffeeRecipe = duoMenu ? duoCoffeeRecipe(row) : undefined;
+        const recipe = coffeeRecipe ?? (duo && isCoffee(row.id) ? LEGACY_COFFEE_RECIPE : undefined);
+        const holder = recipe && byId.get(recipe.stockProductId);
+        return {
+          ...row,
+          active: row.active === 1,
+          trackInventory:
+            forOrders && recipe
+              ? true
+              : row.trackInventory === null
+                ? null
+                : row.trackInventory === 1,
+          stockQuantity:
+            forOrders && recipe
+              ? holder && holder.trackInventory === 1
+                ? holder.stockQuantity
+                : null
+              : row.stockQuantity,
+          ...(coffeeRecipe ? { coffeeRecipe } : {}),
+        };
+      });
     },
     getSettings(): Settings {
       const row = db.prepare("SELECT value FROM settings WHERE key='business_name'").get() as

@@ -11,7 +11,6 @@ export function seed(db: Database.Database, includeDuoCatalog = false): void {
     const now = new Date().toISOString();
     if (includeDuoCatalog) {
       addDuoCatalog(db, now);
-      configureDuoMenu(db, now);
     }
     const table =
       db.prepare(`INSERT INTO cafe_tables (id,code,area,sort_order,created_at,updated_at)
@@ -33,6 +32,7 @@ export function seed(db: Database.Database, includeDuoCatalog = false): void {
     db.prepare(
       "INSERT INTO settings VALUES ('business_name','FOX') ON CONFLICT(key) DO NOTHING",
     ).run();
+    if (includeDuoCatalog) configureDuoMenu(db, now);
     const positions = db.prepare('SELECT code,area FROM cafe_tables').all() as {
       code: string;
       area: string;

@@ -11,7 +11,7 @@ import {
 import type { CatalogProduct, Settings } from '../../src/domain/types';
 import type { createRepositories } from './repositories';
 import { COFFEE_STOCK_ID, coffeePortions, isCoffee } from '../../src/domain/operators';
-import { CUSTOM_STOCK_PRODUCT_PREFIX } from './duoCatalog';
+import { CUSTOM_STOCK_PRODUCT_PREFIX, HOT_DRINK_SETUP } from './duoCatalog';
 import { exactQuantity, assertCashTotals } from './numericSafety';
 export function createConfigurationService(
   db: Database.Database,
@@ -84,7 +84,14 @@ export function createConfigurationService(
         return failure({ trackInventory: 'Stoku i përbashkët i kafesë duhet të ndiqet.' });
       return db
         .transaction(() => {
-          if (!find(value.id)) return failure({ form: 'Produkti nuk u gjet.' });
+          const existing = find(value.id);
+          if (!existing) return failure({ form: 'Produkti nuk u gjet.' });
+          if (existing.coffeeRecipe?.stockProductId === value.id && value.trackInventory !== true)
+            return failure({ trackInventory: 'Stoku i kafesë duhet të ndiqet.' });
+          if (existing.coffeeRecipe && value.categoryId !== 'KAFE')
+            return failure({
+              categoryId: 'Produkti ka stok kafeje në kg. Mbaje te kategoria Kafe.',
+            });
           db.prepare(
             `UPDATE products SET name=@name, category_id=@categoryId,
           purchase_cost_cents=@purchaseCostCents,selling_price_cents=@sellingPriceCents,
@@ -140,6 +147,17 @@ export function createConfigurationService(
       if (typeof name === 'string' && /[\u0000-\u001f\u007f]/.test(name))
         errors.name = 'Shkruaj emrin e produktit në një rresht.';
       if (Object.keys(errors).length) return failure(errors);
+      if (
+        duo &&
+        categoryId === 'KAFE' &&
+        db.prepare('SELECT 1 FROM settings WHERE key=?').get(HOT_DRINK_SETUP)
+      ) {
+        try {
+          coffeePortions(quantity);
+        } catch (error) {
+          return failure({ quantity: (error as Error).message });
+        }
+      }
 
       const token = requestId.toLowerCase();
       const productId = CUSTOM_STOCK_PRODUCT_PREFIX + token;
@@ -191,20 +209,27 @@ export function createConfigurationService(
       const errors = validateSupply(input);
       if (Object.keys(errors).length) return failure(errors);
       const value = input as SupplyRequest;
-      let incoming = value.quantity;
-      if (duo && isCoffee(value.productId)) {
-        if (value.productId !== COFFEE_STOCK_ID)
-          return failure({ productId: 'Përdor stokun e përbashkët të kafesë.' });
-        try {
-          incoming = coffeePortions(value.quantity);
-        } catch {
-          return failure({ quantity: 'Shkruaj kilogramët me deri në tri shifra pas presjes.' });
-        }
-      }
       return db
         .transaction(() => {
-          const product = find(value.productId);
+          const selected = find(value.productId);
+          if (!selected) return failure({ productId: 'Produkti nuk u gjet.' });
+          if (
+            !selected.coffeeRecipe &&
+            duo &&
+            isCoffee(value.productId) &&
+            value.productId !== COFFEE_STOCK_ID
+          )
+            return failure({ productId: 'Përdor stokun e përbashkët të kafesë.' });
+          const stockId = selected.coffeeRecipe?.stockProductId ?? selected.id;
+          const product = stockId === selected.id ? selected : find(stockId);
           if (!product) return failure({ productId: 'Produkti nuk u gjet.' });
+          let incoming = value.quantity;
+          try {
+            if (selected.coffeeRecipe || (duo && stockId === COFFEE_STOCK_ID))
+              incoming = coffeePortions(incoming);
+          } catch (error) {
+            return failure({ quantity: (error as Error).message });
+          }
           // The movement's primary key is the submission token: a retry cannot add stock twice.
           const existing = db
             .prepare('SELECT product_id,type,quantity_delta FROM inventory_movements WHERE id=?')
@@ -218,7 +243,7 @@ export function createConfigurationService(
             if (cash?.paid !== value.drawerPaymentCents)
               return failure({ form: 'Ky furnizim është regjistruar me pagesë tjetër.' });
             if (
-              existing.product_id !== value.productId ||
+              existing.product_id !== stockId ||
               existing.type !== 'SUPPLY' ||
               existing.quantity_delta !== incoming
             )
@@ -235,7 +260,9 @@ export function createConfigurationService(
             });
           }
           const firstCount =
-            duo && product.trackInventory !== true && product.stockQuantity === null;
+            duo &&
+            product.trackInventory !== true &&
+            (product.stockQuantity === null || Boolean(product.coffeeRecipe));
           // Starting tracking while a bill contains this product could charge
           // already served items against the newly counted stock.
           const startTracking =

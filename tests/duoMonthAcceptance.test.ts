@@ -96,7 +96,7 @@ it('reconciles a 6,000-order DUO month through checkout, reopening and owned res
     const drinks = config.addSupply({ requestId: randomUUID(), productId: drink, quantity: 6_000 });
     assert.ok(drinks.ok);
     assert.equal(drinks.data.sellingPriceCents, 150);
-    assert.equal(repo.listProducts(true).length, 20);
+    assert.equal(repo.listProducts(true).length, 34);
     const tableIds = repo.listTables().map(({ id }) => id);
     assert.equal(tableIds.length, 27);
 

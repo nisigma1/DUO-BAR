@@ -12,7 +12,15 @@ import type { MutationResult } from '../../src/domain/configuration';
 import type { createRepositories } from './repositories';
 import { bookedReservation } from './reservations';
 import { isCoffee, type OperatorId } from '../../src/domain/operators';
-import { changeCoffeeStock, coffeeBalance } from './duoCoffee';
+import { LEGACY_COFFEE_RECIPE } from '../../src/domain/hotDrinks';
+import {
+  changeCoffeeStock,
+  coffeeBalance,
+  readCoffeeRecipe,
+  removeCoffeeRecipe,
+  sameCoffeeRecipe,
+  saveCoffeeRecipe,
+} from './duoCoffee';
 
 // Includes quantities and immutable snapshots; timestamps alone can collide within a millisecond.
 export const orderRevision = (lines: ActiveOrderItem[]) =>
@@ -194,20 +202,25 @@ export function createOrderService(
       )
         throw new OrderError('Produkti është hequr nga stoku.');
       const now = new Date().toISOString();
-      const coffee = Boolean(duo && isCoffee(line.productId));
-      const reserved = coffee
+      const savedRecipe = duo ? readCoffeeRecipe(db, line.id) : undefined;
+      const recipe = duo
+        ? (savedRecipe ?? (isCoffee(line.productId) ? LEGACY_COFFEE_RECIPE : undefined))
+        : undefined;
+      const reserved = recipe
         ? ((db
             .prepare('SELECT coffee_portions FROM duo_order_lines WHERE item_id=?')
             .pluck()
             .get(line.id) as number | undefined) ?? 0)
         : 0;
       const changeCoffee = (delta: number) => {
-        if (!delta) return;
-        const issue = changeCoffeeStock(db, view.order!.id, delta, now);
+        if (!delta || !recipe) return;
+        const doses = safe(BigInt(Math.abs(delta)) * BigInt(recipe.doses)) * Math.sign(delta);
+        const issue = changeCoffeeStock(db, view.order!.id, doses, now, recipe);
         if (issue) throw new OrderError(issue);
       };
       if (action === 'remove') {
         changeCoffee(reserved);
+        if (savedRecipe) removeCoffeeRecipe(db, line.id);
         db.prepare('DELETE FROM order_items WHERE id=? AND order_id=?').run(line.id, view.order.id);
         if (view.order.items.length === 1) {
           db.prepare(
@@ -230,7 +243,7 @@ export function createOrderService(
             line.id,
             view.order.id,
           );
-          if (coffee) {
+          if (recipe) {
             const delta = quantity > line.quantity ? 1 : reserved > 0 ? -1 : 0;
             changeCoffee(-delta);
             if (delta) {
@@ -264,15 +277,18 @@ export function createOrderService(
         if (!product) throw new OrderError('Produkti nuk u gjet.');
         const actor = duo?.operator();
         if (duo && !actor) throw new OrderError('Hyr me PIN për të ruajtur porosinë.');
-        const coffee = Boolean(duo && isCoffee(product.id));
-        const stock = coffee ? coffeeBalance(db) : null;
-        if (coffee && (stock === null || stock < quantity))
+        const recipe = duo
+          ? (product.coffeeRecipe ?? (isCoffee(product.id) ? LEGACY_COFFEE_RECIPE : undefined))
+          : undefined;
+        const doses = recipe ? safe(BigInt(quantity) * BigInt(recipe.doses)) : 0;
+        const stock = recipe ? coffeeBalance(db, recipe.stockProductId) : null;
+        if (recipe && (stock === null || stock < doses))
           throw new OrderError('Stoku i kafesë nuk është i mjaftueshëm ose nuk është vendosur.');
-        if (!coffee && product.trackInventory === null)
+        if (!recipe && product.trackInventory === null)
           throw new OrderError('Stoku pa konfiguruar. Zgjidh Po ose Jo te Inventari.');
-        if (!coffee && product.trackInventory === true && product.stockQuantity === null)
+        if (!recipe && product.trackInventory === true && product.stockQuantity === null)
           throw new OrderError('Stok pa vendosur. Vendos stokun te Inventari.');
-        if (!coffee && product.trackInventory === true && product.stockQuantity! <= 0)
+        if (!recipe && product.trackInventory === true && product.stockQuantity! <= 0)
           throw new OrderError('Pa stok. Shto furnizim te Inventari.');
         if (!product.active) throw new OrderError('Produkti nuk është aktiv.');
         if (product.sellingPriceCents === null)
@@ -297,21 +313,27 @@ export function createOrderService(
           ).run(orderId, tableId, now, now);
           tableStatus(tableId, 'ACTIVE', now);
         }
-        const existing = db
+        const matching = db
           .prepare(
             `SELECT id,quantity FROM order_items WHERE order_id=? AND product_id=?
           AND product_name_snapshot=? AND unit_price_cents=? AND unit_cost_cents IS ?
           ${duo ? 'AND (SELECT operator_id FROM duo_order_lines WHERE item_id=order_items.id)=?' : ''}
-          ORDER BY rowid LIMIT 1`,
+          ORDER BY rowid`,
           )
-          .get(
+          .all(
             orderId,
             product.id,
             product.name,
             product.sellingPriceCents,
             product.purchaseCostCents,
             ...(duo ? [actor] : []),
-          ) as { id: string; quantity: number } | undefined;
+          ) as { id: string; quantity: number }[];
+        const legacy = duo && isCoffee(product.id) ? LEGACY_COFFEE_RECIPE : undefined;
+        const existing = duo
+          ? matching.find((item) =>
+              sameCoffeeRecipe(readCoffeeRecipe(db, item.id) ?? legacy, recipe),
+            )
+          : matching[0];
         const itemId = existing?.id ?? randomUUID();
         if (existing)
           db.prepare('UPDATE order_items SET quantity=? WHERE id=?').run(
@@ -332,14 +354,15 @@ export function createOrderService(
             product.purchaseCostCents,
             now,
           );
-        if (coffee) {
-          const issue = changeCoffeeStock(db, orderId, -quantity, now);
+        if (recipe) {
+          if (!existing && !sameCoffeeRecipe(recipe, legacy)) saveCoffeeRecipe(db, itemId, recipe);
+          const issue = changeCoffeeStock(db, orderId, -doses, now, recipe);
           if (issue) throw new OrderError(issue);
         }
         if (actor)
           db.prepare(
             'INSERT INTO duo_order_lines VALUES (?,?,?) ON CONFLICT(item_id) DO UPDATE SET coffee_portions=coffee_portions+excluded.coffee_portions',
-          ).run(itemId, actor, coffee ? quantity : 0);
+          ).run(itemId, actor, recipe ? quantity : 0);
         touch(orderId, now);
         return read(tableId);
       });

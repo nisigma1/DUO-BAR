@@ -11,7 +11,14 @@ import { inspectDatabase } from '../electron/database/health';
 import { addDuoCatalog, hasDuoMenu } from '../electron/database/duoCatalog';
 import { createConfigurationService } from '../electron/database/configuration';
 import { readShiftSales } from '../electron/database/duoReports';
+import { coffeeBalance } from '../electron/database/duoCoffee';
 import type { NewStockProductRequest } from '../src/domain/configuration';
+import {
+  DUO_HOT_DRINKS,
+  drinkCategory,
+  hotDrinkNameKey,
+  suggestHotDrinkCategory,
+} from '../src/domain/hotDrinks';
 
 let directory: string;
 let file: string;
@@ -21,6 +28,114 @@ beforeEach(() => {
 });
 afterEach(() => {
   fs.rmSync(directory, { recursive: true, force: true });
+});
+
+it('adds the photographed coffees with kg supplies, distinct stocks, and stable open orders', () => {
+  for (const name of ['PaPlum', 'Pa plumb', 'Ekspreso pa plum', 'Ice Latte', 'Nescafé Vanille'])
+    expect(suggestHotDrinkCategory(name)).toBe('KAFE');
+  expect(suggestHotDrinkCategory('Çaj i ftohtë')).toBeUndefined();
+  expect(suggestHotDrinkCategory('Çaj kamomil')).toBe('CAJ');
+  expect(hotDrinkNameKey('PaPlum')).toBe(hotDrinkNameKey('Espresso pa plumb'));
+
+  let db = openDatabase(file);
+  try {
+    db.prepare("UPDATE settings SET value='DUO' WHERE key='business_name'").run();
+    db.prepare(
+      "UPDATE products SET selling_price_cents=120,track_inventory=1 WHERE id IN ('KAFE-1','KAFE-2')",
+    ).run();
+    db.prepare("UPDATE inventory_balances SET quantity=220 WHERE product_id='KAFE-1'").run();
+    const legacyOrders = createOrderService(db, createRepositories(db, true), {
+      operator: () => 'OWNER',
+    });
+    const old = legacyOrders.addProduct({ tableId: 'M1', productId: 'KAFE-2' });
+    if (!old.ok || !old.data.order) throw Error('Expected the pre-update decaf order');
+    expect(coffeeBalance(db)).toBe(219);
+    db.close();
+
+    db = openDatabase(file, '0.7.2-rc.4', true);
+    const repo = createRepositories(db, true, true);
+    const configuration = createConfigurationService(db, repo, true);
+    const orders = createOrderService(db, repo, { operator: () => 'OWNER' });
+    expect(orders.getForTable('M1').order).toEqual(old.data.order);
+    const supply = (productId: string, quantity: number) =>
+      configuration.addSupply({ requestId: randomUUID(), productId, quantity });
+    const nescafe = 'duo-hot-v1-nescafe-classic';
+    expect(supply('KAFE-2', 0.5)).toMatchObject({ ok: true, data: { stockQuantity: 55 } });
+    expect(supply(nescafe, 1)).toMatchObject({ ok: true, data: { stockQuantity: 110 } });
+    expect(supply('KAFE-3', 0.5)).toMatchObject({
+      ok: true,
+      data: { id: 'KAFE-1', stockQuantity: 274 },
+    });
+    expect(supply('KAFE-3', 0.0005).ok).toBe(false);
+    const add = (productId: string, quantity: number) =>
+      orders.addProduct({ tableId: 'M1', productId }, quantity);
+    expect(add('KAFE-2', 1).ok).toBe(true);
+    expect(add(nescafe, 1).ok).toBe(true);
+    expect(add('KAFE-3', 2).ok).toBe(true);
+    expect(add('duo-hot-v1-ice-latte', 1).ok).toBe(true);
+    expect(
+      orders.getForTable('M1').order?.items.filter((item) => item.productId === 'KAFE-2'),
+    ).toHaveLength(2);
+    expect(coffeeBalance(db)).toBe(269);
+    expect(coffeeBalance(db, 'KAFE-2')).toBe(54);
+    expect(coffeeBalance(db, nescafe)).toBe(109);
+    const double = orders
+      .getForTable('M1')
+      .order!.items.find((item) => item.productId === 'KAFE-3')!;
+    expect(orders.decrementItem({ tableId: 'M1', itemId: double.id }).ok).toBe(true);
+    expect(coffeeBalance(db)).toBe(271);
+    const paid = orders.getForTable('M1').order!;
+    expect(
+      createCheckoutService(db, orders, true).completeOrder({
+        orderId: paid.id,
+        expectedRevision: paid.revision,
+      }).ok,
+    ).toBe(true);
+    expect(coffeeBalance(db)).toBe(271);
+    expect(coffeeBalance(db, 'KAFE-2')).toBe(54);
+    expect(coffeeBalance(db, nescafe)).toBe(109);
+
+    const custom = configuration.createProductWithStock({
+      requestId: randomUUID(),
+      name: 'Latte special',
+      categoryId: 'KAFE',
+      quantity: 0.5,
+    });
+    expect(custom).toMatchObject({ ok: true, data: { stockQuantity: 55 } });
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  } finally {
+    if (db.open) db.close();
+  }
+});
+
+it('reuses a previously added PaPlum including its price and stock', () => {
+  const original = openDatabase(file);
+  original.prepare("UPDATE settings SET value='DUO' WHERE key='business_name'").run();
+  const config = createConfigurationService(original, createRepositories(original));
+  const custom = config.createProductWithStock({
+    requestId: randomUUID(),
+    name: 'PaPlum',
+    categoryId: 'KAFE',
+    quantity: 37,
+  });
+  if (!custom.ok) throw Error(custom.message);
+  expect(config.updateProduct({ ...custom.data, sellingPriceCents: 130 }).ok).toBe(true);
+  original.close();
+  const upgraded = openDatabase(file, '0.7.2-rc.4', true);
+  try {
+    const products = createRepositories(upgraded, true, true)
+      .listProducts()
+      .filter((p) => hotDrinkNameKey(p.name) === hotDrinkNameKey('Pa plumb'));
+    expect(products).toHaveLength(1);
+    expect(products[0]).toMatchObject({
+      id: custom.data.id,
+      sellingPriceCents: 130,
+      stockQuantity: 37,
+      coffeeRecipe: { stockProductId: custom.data.id, doses: 1 },
+    });
+  } finally {
+    upgraded.close();
+  }
 });
 
 it('creates a custom product and its first supply once, preserving an open DUO order', () => {
@@ -67,7 +182,7 @@ it('creates a custom product and its first supply once, preserving an open DUO o
       trackInventory: true,
       active: true,
     });
-    expect(repo.listProducts()).toHaveLength(22);
+    expect(repo.listProducts()).toHaveLength(21 + DUO_HOT_DRINKS.length);
     expect(orders.addProduct({ tableId: 'M2', productId: product.id }).ok).toBe(false);
     expect(orders.getForTable('M1')).toEqual(existing.data);
     expect(config.createProductWithStock(request)).toEqual(created);
@@ -167,7 +282,12 @@ it('adds 19 priced products once to the DUO catalog without changing history or 
     ).toBe(true);
     const all = createRepositories(updated).listProducts();
     const imported = all.filter(({ id }) => id.startsWith('duo-drinks-v1-'));
-    expect(all.filter(({ id }) => !id.startsWith('duo-drinks-v1-'))).toEqual(products);
+    for (const previous of products!) {
+      const current = all.find(({ id }) => id === previous.id)!;
+      expect(current.stockQuantity).toBe(previous.stockQuantity);
+      expect(current.purchaseCostCents).toBe(previous.purchaseCostCents);
+      if (!DUO_HOT_DRINKS.some(([id]) => id === previous.id)) expect(current).toEqual(previous);
+    }
     expect(imported).toHaveLength(19);
     expect(imported.find(({ name }) => name === 'Tuborg 0.33 L')?.purchaseCostCents).toBe(104);
     expect(imported.find(({ name }) => name === 'Heineken')?.purchaseCostCents).toBeNull();
@@ -187,7 +307,7 @@ it('adds 19 priced products once to the DUO catalog without changing history or 
 
   const reopened = openDatabase(file, '0.7.2-rc.4', true);
   try {
-    expect(createRepositories(reopened).listProducts()).toHaveLength(40);
+    expect(createRepositories(reopened).listProducts()).toHaveLength(47);
     expect(readHistory(reopened)).toEqual(history);
   } finally {
     reopened.close();
@@ -239,8 +359,10 @@ it('orders Espresso alongside the 19 drinks and reconciles payment, stock and re
     const repo = createRepositories(upgraded, true, true);
     const config = createConfigurationService(upgraded, repo, true);
     const menu = repo.listProducts(true);
-    expect(menu).toHaveLength(20);
-    expect(menu.filter((p) => p.categoryId === 'KAFE').map((p) => p.id)).toEqual([espresso]);
+    expect(menu).toHaveLength(19 + DUO_HOT_DRINKS.length);
+    expect(
+      menu.filter((p) => drinkCategory(p.categoryId, true) === 'KAFE').map((p) => p.id),
+    ).toEqual(expect.arrayContaining(DUO_HOT_DRINKS.map(([id]) => id)));
     expect(menu.find((p) => p.id === espresso)).toMatchObject({
       active: true,
       sellingPriceCents: 120,
@@ -256,7 +378,7 @@ it('orders Espresso alongside the 19 drinks and reconciles payment, stock and re
       stockQuantity: null,
     });
     expect(repo.listProducts().some((product) => product.id === 'KAFE-1')).toBe(true);
-    expect(upgraded.prepare('SELECT count(*) FROM products').pluck().get()).toBe(40);
+    expect(upgraded.prepare('SELECT count(*) FROM products').pluck().get()).toBe(47);
     expect(upgraded.prepare('SELECT count(*) FROM inventory_movements').pluck().get()).toBe(0);
 
     const count = { requestId: randomUUID(), productId: cola, quantity: 12 };

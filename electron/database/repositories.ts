@@ -4,15 +4,20 @@ import type { TableSummary, CatalogProduct, ReportSummary, Settings } from '../.
 
 import { COFFEE_STOCK_ID, isCoffee } from '../../src/domain/operators';
 import { duoCoffeeRecipe, LEGACY_COFFEE_RECIPE } from '../../src/domain/hotDrinks';
-import { HOT_DRINK_SETUP, isCustomStockProduct, isDuoMenuProduct } from './duoCatalog';
+import {
+  HOT_DRINK_SETUP,
+  isCustomStockProduct,
+  isDuoMenuProduct,
+  readPrintedMenu,
+} from './duoCatalog';
 
 export function createRepositories(db: Database.Database, duo = false, duoMenu = false) {
-  const configuredHot = duoMenu
-    ? db.prepare('SELECT value FROM settings WHERE key=?').pluck().get(HOT_DRINK_SETUP)
-    : undefined;
-  const hotIds = new Set<string>(
-    typeof configuredHot === 'string' ? JSON.parse(configuredHot) : [],
-  );
+  const printed = duoMenu ? readPrintedMenu(db) : undefined;
+  const configured =
+    duoMenu && !printed
+      ? db.prepare('SELECT value FROM settings WHERE key=?').pluck().get(HOT_DRINK_SETUP)
+      : undefined;
+  const catalogIds = new Set<string>(typeof configured === 'string' ? JSON.parse(configured) : []);
   return {
     getSalesReport: (period: unknown) => readSalesReport(db, period),
     listTables(): TableSummary[] {
@@ -54,15 +59,19 @@ export function createRepositories(db: Database.Database, duo = false, duoMenu =
       const visible = duoMenu
         ? rows.filter(
             (row) =>
-              isDuoMenuProduct(row.id) ||
-              row.id === COFFEE_STOCK_ID ||
-              hotIds.has(row.id) ||
-              (hotIds.size > 0 && row.categoryId === 'CAJ' && row.sellingPriceCents !== null) ||
-              isCustomStockProduct(row.id),
+              printed?.has(row.id) ||
+              isCustomStockProduct(row.id) ||
+              (!printed &&
+                (isDuoMenuProduct(row.id) ||
+                  row.id === COFFEE_STOCK_ID ||
+                  catalogIds.has(row.id) ||
+                  (catalogIds.size > 0 &&
+                    row.categoryId === 'CAJ' &&
+                    row.sellingPriceCents !== null))),
           )
         : rows;
       return visible.map((row) => {
-        const coffeeRecipe = duoMenu ? duoCoffeeRecipe(row) : undefined;
+        const coffeeRecipe = duoMenu ? duoCoffeeRecipe(row, printed?.get(row.id)) : undefined;
         const recipe = coffeeRecipe ?? (duo && isCoffee(row.id) ? LEGACY_COFFEE_RECIPE : undefined);
         const holder = recipe && byId.get(recipe.stockProductId);
         return {

@@ -31,8 +31,10 @@ afterEach(() => {
 });
 
 it('adds the photographed coffees with kg supplies, distinct stocks, and stable open orders', () => {
-  for (const name of ['PaPlum', 'Pa plumb', 'Ekspreso pa plum', 'Ice Latte', 'Nescafé Vanille'])
+  for (const name of ['PaPlum', 'Pa plumb', 'Ekspreso pa plum', 'Nescafé Vanille'])
     expect(suggestHotDrinkCategory(name)).toBe('KAFE');
+  expect(suggestHotDrinkCategory('Ice Latte')).toBe('PIJE');
+  expect(suggestHotDrinkCategory('Ice Amerikane')).toBe('PIJE');
   expect(suggestHotDrinkCategory('Çaj i ftohtë')).toBeUndefined();
   expect(suggestHotDrinkCategory('Çaj kamomil')).toBe('CAJ');
   expect(hotDrinkNameKey('PaPlum')).toBe(hotDrinkNameKey('Espresso pa plumb'));
@@ -44,12 +46,33 @@ it('adds the photographed coffees with kg supplies, distinct stocks, and stable 
       "UPDATE products SET selling_price_cents=120,track_inventory=1 WHERE id IN ('KAFE-1','KAFE-2')",
     ).run();
     db.prepare("UPDATE inventory_balances SET quantity=220 WHERE product_id='KAFE-1'").run();
-    const legacyOrders = createOrderService(db, createRepositories(db, true), {
-      operator: () => 'OWNER',
-    });
+    db.prepare("UPDATE inventory_balances SET quantity=19 WHERE product_id='KAFE-2'").run();
+    const prior = createRepositories(db, true);
+    const legacyOrders = createOrderService(
+      db,
+      {
+        ...prior,
+        listProducts: (forOrders) =>
+          prior
+            .listProducts(forOrders)
+            .map((product) =>
+              product.id === 'KAFE-2'
+                ? {
+                    ...product,
+                    stockQuantity: coffeeBalance(db, 'KAFE-2'),
+                    coffeeRecipe: { stockProductId: 'KAFE-2', doses: 1 },
+                  }
+                : product,
+            ),
+      },
+      {
+        operator: () => 'OWNER',
+      },
+    );
     const old = legacyOrders.addProduct({ tableId: 'M1', productId: 'KAFE-2' });
     if (!old.ok || !old.data.order) throw Error('Expected the pre-update decaf order');
-    expect(coffeeBalance(db)).toBe(219);
+    expect(coffeeBalance(db)).toBe(220);
+    expect(coffeeBalance(db, 'KAFE-2')).toBe(18);
     db.close();
 
     db = openDatabase(file, '0.7.2-rc.4', true);
@@ -60,11 +83,14 @@ it('adds the photographed coffees with kg supplies, distinct stocks, and stable 
     const supply = (productId: string, quantity: number) =>
       configuration.addSupply({ requestId: randomUUID(), productId, quantity });
     const nescafe = 'duo-hot-v1-nescafe-classic';
-    expect(supply('KAFE-2', 0.5)).toMatchObject({ ok: true, data: { stockQuantity: 55 } });
+    expect(supply('KAFE-2', 0.5)).toMatchObject({
+      ok: true,
+      data: { id: 'KAFE-1', stockQuantity: 275 },
+    });
     expect(supply(nescafe, 1)).toMatchObject({ ok: true, data: { stockQuantity: 110 } });
     expect(supply('KAFE-3', 0.5)).toMatchObject({
       ok: true,
-      data: { id: 'KAFE-1', stockQuantity: 274 },
+      data: { id: 'KAFE-1', stockQuantity: 330 },
     });
     expect(supply('KAFE-3', 0.0005).ok).toBe(false);
     const add = (productId: string, quantity: number) =>
@@ -76,14 +102,14 @@ it('adds the photographed coffees with kg supplies, distinct stocks, and stable 
     expect(
       orders.getForTable('M1').order?.items.filter((item) => item.productId === 'KAFE-2'),
     ).toHaveLength(2);
-    expect(coffeeBalance(db)).toBe(269);
-    expect(coffeeBalance(db, 'KAFE-2')).toBe(54);
+    expect(coffeeBalance(db)).toBe(324);
+    expect(coffeeBalance(db, 'KAFE-2')).toBe(18);
     expect(coffeeBalance(db, nescafe)).toBe(109);
     const double = orders
       .getForTable('M1')
       .order!.items.find((item) => item.productId === 'KAFE-3')!;
     expect(orders.decrementItem({ tableId: 'M1', itemId: double.id }).ok).toBe(true);
-    expect(coffeeBalance(db)).toBe(271);
+    expect(coffeeBalance(db)).toBe(326);
     const paid = orders.getForTable('M1').order!;
     expect(
       createCheckoutService(db, orders, true).completeOrder({
@@ -91,8 +117,8 @@ it('adds the photographed coffees with kg supplies, distinct stocks, and stable 
         expectedRevision: paid.revision,
       }).ok,
     ).toBe(true);
-    expect(coffeeBalance(db)).toBe(271);
-    expect(coffeeBalance(db, 'KAFE-2')).toBe(54);
+    expect(coffeeBalance(db)).toBe(326);
+    expect(coffeeBalance(db, 'KAFE-2')).toBe(18);
     expect(coffeeBalance(db, nescafe)).toBe(109);
 
     const custom = configuration.createProductWithStock({
@@ -108,7 +134,7 @@ it('adds the photographed coffees with kg supplies, distinct stocks, and stable 
   }
 });
 
-it('reuses a previously added PaPlum including its price and stock', () => {
+it('reuses a previously added PaPlum with the printed price and shared recipe', () => {
   const original = openDatabase(file);
   original.prepare("UPDATE settings SET value='DUO' WHERE key='business_name'").run();
   const config = createConfigurationService(original, createRepositories(original));
@@ -129,9 +155,9 @@ it('reuses a previously added PaPlum including its price and stock', () => {
     expect(products).toHaveLength(1);
     expect(products[0]).toMatchObject({
       id: custom.data.id,
-      sellingPriceCents: 130,
+      sellingPriceCents: 120,
       stockQuantity: 37,
-      coffeeRecipe: { stockProductId: custom.data.id, doses: 1 },
+      coffeeRecipe: { stockProductId: 'KAFE-1', doses: 1 },
     });
   } finally {
     upgraded.close();
@@ -151,6 +177,19 @@ it('creates a custom product and its first supply once, preserving an open DUO o
     quantity: 12,
   });
   if (!earlier.ok) throw Error(earlier.message);
+  const before = createRepositories(initial);
+  expect(
+    createConfigurationService(initial, before).updateProduct({
+      ...earlier.data,
+      sellingPriceCents: 200,
+    }).ok,
+  ).toBe(true);
+  const pending = createOrderService(initial, before).addProduct({
+    tableId: 'M3',
+    productId: earlier.data.id,
+  });
+  if (!pending.ok || !pending.data.order)
+    throw Error('Expected an open order for the retired product');
   initial.close();
 
   const request: NewStockProductRequest = {
@@ -164,9 +203,19 @@ it('creates a custom product and its first supply once, preserving an open DUO o
   try {
     const repo = createRepositories(db, true, true);
     expect(hasDuoMenu(db)).toBe(true);
-    expect(repo.listProducts()).toContainEqual(earlier.data);
+    expect(repo.listProducts().some(({ id }) => id === earlier.data.id)).toBe(false);
     const config = createConfigurationService(db, repo, true);
     const orders = createOrderService(db, repo, { operator: () => 'OWNER' });
+    expect(orders.getForTable('M3').order).toEqual(pending.data.order);
+    expect(
+      createCheckoutService(db, orders, true).completeOrder({ orderId: pending.data.order.id }).ok,
+    ).toBe(true);
+    expect(
+      db
+        .prepare('SELECT quantity FROM inventory_balances WHERE product_id=?')
+        .pluck()
+        .get(earlier.data.id),
+    ).toBe(11);
     const existing = orders.addProduct({ tableId: 'M1', productId: 'duo-drinks-v1-1' });
     if (!existing.ok || !existing.data.order) throw Error('Expected a saved DUO order');
 
@@ -182,7 +231,7 @@ it('creates a custom product and its first supply once, preserving an open DUO o
       trackInventory: true,
       active: true,
     });
-    expect(repo.listProducts()).toHaveLength(21 + DUO_HOT_DRINKS.length);
+    expect(repo.listProducts()).toHaveLength(63);
     expect(orders.addProduct({ tableId: 'M2', productId: product.id }).ok).toBe(false);
     expect(orders.getForTable('M1')).toEqual(existing.data);
     expect(config.createProductWithStock(request)).toEqual(created);
@@ -207,9 +256,11 @@ it('creates a custom product and its first supply once, preserving an open DUO o
         .pluck()
         .get(product.id),
     ).toBe(1);
-    expect(db.prepare('SELECT kind, amount_cents FROM cash_events').all()).toEqual([
-      { kind: 'INVENTORY_SUPPLY_OUT', amount_cents: -1200 },
-    ]);
+    expect(
+      db
+        .prepare("SELECT kind, amount_cents FROM cash_events WHERE kind='INVENTORY_SUPPLY_OUT'")
+        .all(),
+    ).toEqual([{ kind: 'INVENTORY_SUPPLY_OUT', amount_cents: -1200 }]);
 
     const updated = reopenedConfig.updateProduct({
       ...product,
@@ -236,7 +287,7 @@ it('creates a custom product and its first supply once, preserving an open DUO o
   }
 });
 
-it('adds 19 priced products once to the DUO catalog without changing history or stock', () => {
+it('upgrades the older DUO catalog without changing history or stock balances', () => {
   const original = openDatabase(file);
   const readHistory = (db: typeof original) =>
     [
@@ -248,7 +299,7 @@ it('adds 19 priced products once to the DUO catalog without changing history or 
       'inventory_movements',
       'cafe_tables',
     ].map((table) => db.prepare('SELECT * FROM ' + table + ' ORDER BY rowid').all());
-  let products;
+  let balances;
   let history;
   try {
     original.prepare("UPDATE settings SET value='DUO' WHERE key='business_name'").run();
@@ -265,7 +316,7 @@ it('adds 19 priced products once to the DUO catalog without changing history or 
     expect(
       createCheckoutService(original, orders).completeOrder({ orderId: order.data.order.id }).ok,
     ).toBe(true);
-    products = repo.listProducts();
+    balances = original.prepare('SELECT * FROM inventory_balances ORDER BY rowid').all();
     history = readHistory(original);
     // An empty v7-only table can be removed here to represent the exact v6 fixture.
     original.exec('DROP TABLE duo_order_lines; DELETE FROM schema_migrations WHERE version=7');
@@ -282,14 +333,11 @@ it('adds 19 priced products once to the DUO catalog without changing history or 
     ).toBe(true);
     const all = createRepositories(updated).listProducts();
     const imported = all.filter(({ id }) => id.startsWith('duo-drinks-v1-'));
-    for (const previous of products!) {
-      const current = all.find(({ id }) => id === previous.id)!;
-      expect(current.stockQuantity).toBe(previous.stockQuantity);
-      expect(current.purchaseCostCents).toBe(previous.purchaseCostCents);
-      if (!DUO_HOT_DRINKS.some(([id]) => id === previous.id)) expect(current).toEqual(previous);
-    }
-    expect(imported).toHaveLength(19);
-    expect(imported.find(({ name }) => name === 'Tuborg 0.33 L')?.purchaseCostCents).toBe(104);
+    expect(updated.prepare('SELECT * FROM inventory_balances ORDER BY rowid').all()).toEqual(
+      expect.arrayContaining(balances!),
+    );
+    expect(imported).toHaveLength(14);
+    expect(imported.find(({ name }) => name === 'Tuborg')?.purchaseCostCents).toBe(104);
     expect(imported.find(({ name }) => name === 'Heineken')?.purchaseCostCents).toBeNull();
     for (const product of imported) {
       expect(product.sellingPriceCents).toBeGreaterThan(0);
@@ -307,7 +355,7 @@ it('adds 19 priced products once to the DUO catalog without changing history or 
 
   const reopened = openDatabase(file, '0.7.2-rc.4', true);
   try {
-    expect(createRepositories(reopened).listProducts()).toHaveLength(47);
+    expect(createRepositories(reopened).listProducts()).toHaveLength(62);
     expect(readHistory(reopened)).toEqual(history);
   } finally {
     reopened.close();
@@ -339,7 +387,7 @@ it('keeps fresh, other business, non-target and locally changed catalogs out of 
   }
 });
 
-it('orders Espresso alongside the 19 drinks and reconciles payment, stock and reopening', () => {
+it('orders the printed menu and reconciles payment, stock and reopening', () => {
   const original = openDatabase(file);
   original.prepare("UPDATE settings SET value='DUO' WHERE key='business_name'").run();
   original.transaction(() => addDuoCatalog(original, new Date().toISOString()))();
@@ -348,7 +396,7 @@ it('orders Espresso alongside the 19 drinks and reconciles payment, stock and re
   original.prepare('UPDATE products SET selling_price_cents=? WHERE id=?').run(160, cola);
   original
     .prepare(
-      'UPDATE products SET active=0, selling_price_cents=120, purchase_cost_cents=30, track_inventory=1 WHERE id=?',
+      'UPDATE products SET active=0, selling_price_cents=120, purchase_cost_cents=50, track_inventory=1 WHERE id=?',
     )
     .run(espresso);
   original.prepare('UPDATE inventory_balances SET quantity=535 WHERE product_id=?').run(espresso);
@@ -359,26 +407,45 @@ it('orders Espresso alongside the 19 drinks and reconciles payment, stock and re
     const repo = createRepositories(upgraded, true, true);
     const config = createConfigurationService(upgraded, repo, true);
     const menu = repo.listProducts(true);
-    expect(menu).toHaveLength(19 + DUO_HOT_DRINKS.length);
+    expect(menu).toHaveLength(62);
     expect(
       menu.filter((p) => drinkCategory(p.categoryId, true) === 'KAFE').map((p) => p.id),
-    ).toEqual(expect.arrayContaining(DUO_HOT_DRINKS.map(([id]) => id)));
+    ).toEqual(
+      expect.arrayContaining(
+        DUO_HOT_DRINKS.filter(([, , category]) => category !== 'PIJE').map(([id]) => id),
+      ),
+    );
+    for (const name of ['Ice Latte', 'Ice Amerikane']) {
+      const iced = menu.find((p) => p.name === name)!;
+      expect(iced).toMatchObject({
+        categoryId: 'PIJE',
+        coffeeRecipe: { stockProductId: espresso },
+      });
+      expect(config.updateProduct(iced).ok).toBe(true);
+    }
     expect(menu.find((p) => p.id === espresso)).toMatchObject({
       active: true,
-      sellingPriceCents: 120,
-      purchaseCostCents: 30,
+      sellingPriceCents: 100,
+      purchaseCostCents: null,
       stockQuantity: 535,
     });
     expect(menu.every((product) => product.active && product.sellingPriceCents !== null)).toBe(
       true,
     );
     expect(menu.find((product) => product.id === cola)).toMatchObject({
-      sellingPriceCents: 160,
+      sellingPriceCents: 150,
       trackInventory: false,
       stockQuantity: null,
     });
     expect(repo.listProducts().some((product) => product.id === 'KAFE-1')).toBe(true);
-    expect(upgraded.prepare('SELECT count(*) FROM products').pluck().get()).toBe(47);
+    expect(
+      upgraded.prepare('SELECT active FROM products WHERE id=?').pluck().get('duo-drinks-v1-12'),
+    ).toBe(0);
+    expect(menu.find((product) => product.name === 'Tequila')).toMatchObject({
+      sellingPriceCents: 250,
+      purchaseCostCents: null,
+      stockQuantity: null,
+    });
     expect(upgraded.prepare('SELECT count(*) FROM inventory_movements').pluck().get()).toBe(0);
 
     const count = { requestId: randomUUID(), productId: cola, quantity: 12 };
@@ -400,7 +467,7 @@ it('orders Espresso alongside the 19 drinks and reconciles payment, stock and re
     };
     const order = orders.submitDraft(draft);
     if (!order.ok || !order.data.order) throw Error('Expected a priced order');
-    expect(order.data.order.totalCents).toBe(280);
+    expect(order.data.order.totalCents).toBe(250);
     expect(orders.submitDraft(draft).ok).toBe(true);
     expect(repo.listProducts(true).find((p) => p.id === espresso)?.stockQuantity).toBe(534);
     expect(
@@ -409,8 +476,8 @@ it('orders Espresso alongside the 19 drinks and reconciles payment, stock and re
     ).toBe(true);
     expect(repo.listProducts(true).find((p) => p.id === cola)?.stockQuantity).toBe(11);
     expect(repo.listProducts(true).find((p) => p.id === espresso)?.stockQuantity).toBe(534);
-    expect(readShiftSales(upgraded, 'AM').totalCents).toBe(280);
-    expect(readShiftSales(upgraded, 'DAY').totalCents).toBe(280);
+    expect(readShiftSales(upgraded, 'AM').totalCents).toBe(250);
+    expect(readShiftSales(upgraded, 'DAY').totalCents).toBe(250);
     expect(upgraded.prepare('SELECT count(*) FROM receipt_documents').pluck().get()).toBe(1);
     upgraded.prepare('UPDATE products SET active=0,selling_price_cents=200 WHERE id=?').run(cola);
     upgraded
@@ -433,18 +500,20 @@ it('orders Espresso alongside the 19 drinks and reconciles payment, stock and re
       sellingPriceCents: 130,
       stockQuantity: 534,
     });
-    expect(readShiftSales(reopened, 'DAY').totalCents).toBe(280);
+    expect(readShiftSales(reopened, 'DAY').totalCents).toBe(250);
   } finally {
     reopened.close();
   }
 });
 
-it('adds Espresso on an already configured terminal without reapplying drink defaults', () => {
+it('applies the printed prices on a terminal that already has the previous menu', () => {
   const prior = openDatabase(file);
   try {
     prior.prepare("UPDATE settings SET value='DUO' WHERE key='business_name'").run();
     prior.transaction(() => addDuoCatalog(prior, new Date().toISOString()))();
-    prior.prepare("INSERT INTO settings VALUES ('duo_menu_prices_v1', '1')").run();
+    prior
+      .prepare('INSERT INTO settings VALUES (\'duo_hot_drinks_v1\', \'["KAFE-1","KAFE-2"]\')')
+      .run();
     prior.prepare("UPDATE products SET active=0,selling_price_cents=145 WHERE id='KAFE-1'").run();
     prior
       .prepare("UPDATE products SET active=0,selling_price_cents=215 WHERE id='duo-drinks-v1-1'")
@@ -457,12 +526,12 @@ it('adds Espresso on an already configured terminal without reapplying drink def
     const menu = createRepositories(upgraded, true, true).listProducts(true);
     expect(menu.find((p) => p.id === 'KAFE-1')).toMatchObject({
       active: true,
-      sellingPriceCents: 145,
+      sellingPriceCents: 100,
       stockQuantity: null,
     });
     expect(menu.find((p) => p.id === 'duo-drinks-v1-1')).toMatchObject({
-      active: false,
-      sellingPriceCents: 215,
+      active: true,
+      sellingPriceCents: 150,
       stockQuantity: null,
     });
     expect(upgraded.prepare('SELECT count(*) FROM inventory_movements').pluck().get()).toBe(0);

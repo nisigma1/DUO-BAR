@@ -88,9 +88,9 @@ export function createConfigurationService(
           if (!existing) return failure({ form: 'Produkti nuk u gjet.' });
           if (existing.coffeeRecipe?.stockProductId === value.id && value.trackInventory !== true)
             return failure({ trackInventory: 'Stoku i kafesë duhet të ndiqet.' });
-          if (existing.coffeeRecipe && value.categoryId !== 'KAFE')
+          if (existing.coffeeRecipe && value.categoryId !== existing.categoryId)
             return failure({
-              categoryId: 'Produkti ka stok kafeje në kg. Mbaje te kategoria Kafe.',
+              categoryId: 'Produkti ka stok kafeje në kg. Mbaje te kategoria aktuale.',
             });
           db.prepare(
             `UPDATE products SET name=@name, category_id=@categoryId,

@@ -202,7 +202,9 @@ export function Inventory() {
                       <td>
                         {duoMenu && ['KAFE', 'CAJ'].includes(product.categoryId)
                           ? 'Pijet e ngrohta'
-                          : product.categoryName}
+                          : duoMenu && product.categoryId === 'PIJE'
+                            ? 'Pijet e ftohta'
+                            : product.categoryName}
                       </td>
                       <td className="stock-cell numeric">
                         {(product.coffeeRecipe &&

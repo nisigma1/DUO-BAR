@@ -22,7 +22,7 @@ import { readSalesReport } from './salesReports';
 import { COFFEE_STOCK_ID, coffeePortions, isCoffee } from '../../src/domain/operators';
 import { duoCoffeeRecipe } from '../../src/domain/hotDrinks';
 import type { CategoryCode } from '../../src/domain/types';
-import { HOT_DRINK_SETUP } from './duoCatalog';
+import { HOT_DRINK_SETUP, readPrintedMenu } from './duoCatalog';
 import { effectiveExpenses, expenseRange, mapExpense, safeMoney } from './financeQueries';
 import { logError } from '../main/logging';
 import { exactQuantity, exactQuantityCost, assertCashTotals } from './numericSafety';
@@ -418,7 +418,7 @@ export function createFinanceService(
             if (!p || p.tracking !== 1) throw Error('Zgjidh produkt me ndjekje stoku.');
             const recipe =
               duo && db.prepare('SELECT 1 FROM settings WHERE key=?').get(HOT_DRINK_SETUP)
-                ? duoCoffeeRecipe(p)
+                ? duoCoffeeRecipe(p, readPrintedMenu(db)?.get(p.id))
                 : undefined;
             const coffee = Boolean(recipe || (duo && isCoffee(p.id)));
             if (coffee && p.id !== (recipe?.stockProductId ?? COFFEE_STOCK_ID))

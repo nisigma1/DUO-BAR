@@ -126,8 +126,40 @@ try {
   await until('Boolean(document.querySelector("[data-order-product=KAFE-1]:not(:disabled)"))');
   await tap('[data-order-product=KAFE-1]');
   await until('!!document.querySelector("[data-ops-save-order]:not(:disabled)")');
+  const splitMetrics = () =>
+    js(`(() => {
+      const handle = document.querySelector("[data-order-split-handle]");
+      const {x, y, width, height} = handle.getBoundingClientRect();
+      return {
+        x: x + width / 2, y: y + height / 2,
+        catalog: document.querySelector(".ops-products").clientHeight,
+        details: document.querySelector(".order-split-details").clientHeight,
+        quantity: document.querySelector("[data-draft-quantity]")?.textContent,
+        footer: document.querySelector("[data-ops-save-order]").getBoundingClientRect().bottom
+      };
+    })()`);
+  const beforeDrag = await splitMetrics();
+  const grip = { x: beforeDrag.x, y: beforeDrag.y };
+  await command('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [grip] });
+  await command('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [{ x: grip.x, y: grip.y + 40 }],
+  });
+  await command('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  const afterDrag = await splitMetrics();
+  assert.ok(
+    afterDrag.catalog > beforeDrag.catalog && afterDrag.details < beforeDrag.details,
+    JSON.stringify({ beforeDrag, afterDrag }),
+  );
+  assert.equal(afterDrag.quantity, '1');
+  assert.equal(afterDrag.footer, beforeDrag.footer);
+  await js('document.querySelector("[data-order-split-handle]").focus()');
+  await command('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'ArrowUp' });
+  assert.ok((await splitMetrics()).catalog < afterDrag.catalog);
+  result.checks.push('Touch and keyboard resize the order panes while retaining the draft');
   await tap('[data-ops-save-order]');
   await until('Boolean(document.querySelector("[data-order-item]"))');
+  assert.ok(await js('Boolean(document.querySelector(".order-split-details .current-order"))'));
   assert.equal(await js('document.querySelector("[data-order-quantity]")?.textContent'), '1');
   await command('Emulation.setTouchEmulationEnabled', { enabled: false });
   result.checks.push('One touch per table, product and order confirmation at 125% scaling');

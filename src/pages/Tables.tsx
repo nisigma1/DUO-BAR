@@ -55,6 +55,7 @@ export function Tables({ stockRevision }: { stockRevision: number }) {
   const checkoutLock = useRef(false);
   const [reservationDialog, setReservationDialog] = useState<{ id: string; code: string }>();
   const [selected, setSelected] = useState<string>();
+  const [catalogShare, setCatalogShare] = useState(68);
   const [view, setView] = useState<OrderWorkspace>();
   const [message, setMessage] = useState('');
   const [readFailed, setReadFailed] = useState(false);
@@ -452,6 +453,72 @@ export function Tables({ stockRevision }: { stockRevision: number }) {
     saved: '',
     empty: '',
   }[saveState];
+  const savedOrder = table && view?.order && (
+    <section className="current-order" aria-label="Porosia e ruajtur">
+      <h3>
+        <Icon name="cart" />
+        Porosia e ruajtur
+      </h3>
+      {view.order.items.map((item) => {
+        const key = `${table.id}:item:${item.id}`;
+        const disabled = !canMutate || hasDraft || tablePending;
+        const input = { tableId: table.id, itemId: item.id };
+        const name = productDisplayName(item.name, hideVolume);
+        const changesCoffeeStock = Boolean(isCoffee(item.productId) || session.duoMenu);
+        return (
+          <div className="order-item" key={item.id} data-order-item={item.id}>
+            <div className="order-item-name">
+              <strong>{name}</strong>
+              <small>{formatMoney(item.unitPriceCents)} / njësi</small>
+            </div>
+            <div className="order-item-controls">
+              {!employee ? (
+                <div className="quantity-control">
+                  <Button
+                    className="icon-button"
+                    disabled={disabled || item.quantity === 1}
+                    aria-label={`Ul sasinë e ${name}`}
+                    onClick={() =>
+                      run(key, () => window.fox.orders.decrementItem(input), changesCoffeeStock)
+                    }
+                  >
+                    <Icon name="minus" />
+                  </Button>
+                  <span data-order-quantity>{item.quantity}</span>
+                  <Button
+                    className="icon-button"
+                    disabled={disabled}
+                    aria-label={`Rrit sasinë e ${name}`}
+                    onClick={() =>
+                      run(key, () => window.fox.orders.incrementItem(input), changesCoffeeStock)
+                    }
+                  >
+                    <Icon name="plus" />
+                  </Button>
+                </div>
+              ) : (
+                <span data-order-quantity>{item.quantity}</span>
+              )}
+              <strong>{formatMoney(item.lineTotalCents)}</strong>
+              {!employee && (
+                <Button
+                  variant="ghost"
+                  className="icon-button remove-item"
+                  disabled={disabled}
+                  aria-label={`Hiq ${name}`}
+                  onClick={() =>
+                    run(key, () => window.fox.orders.removeItem(input), changesCoffeeStock)
+                  }
+                >
+                  <Icon name="trash" />
+                </Button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
   return (
     <div data-page="tables" className={selected ? 'pos-selected' : ''}>
       {header}
@@ -492,13 +559,15 @@ export function Tables({ stockRevision }: { stockRevision: number }) {
               <div className="reservation-toolbar">
                 <Button
                   data-open-reservation
+                  aria-label="Rezervo tavolinën"
+                  title="Rezervo tavolinën"
                   disabled={tablePending || hasDraft || !!reservationDialog}
                   onClick={() =>
                     setReservationDialog({ id: table.id, code: tableDisplayCode(table.code) })
                   }
                 >
                   <Icon name="calendar" />
-                  Rezervo tavolinën
+                  <span>Rezervo tavolinën</span>
                 </Button>
               </div>
             )}
@@ -615,90 +684,16 @@ export function Tables({ stockRevision }: { stockRevision: number }) {
                           draft={draft}
                           onChange={(update) => changeDraft(table.id, update)}
                           subtotal={subtotal}
+                          savedOrder={savedOrder}
+                          catalogShare={catalogShare}
+                          onResize={setCatalogShare}
                           disabled={!canMutate || tablePending || !!draft.retry}
                         />
                       ) : (
-                        <DataState error={catalog.error} retry={catalog.retry} />
-                      )}
-                      {view.order && (
-                        <section className="current-order" aria-label="Porosia e ruajtur">
-                          <h3>
-                            <Icon name="cart" />
-                            Porosia e ruajtur
-                          </h3>
-                          {view.order.items.map((item) => {
-                            const key = `${table.id}:item:${item.id}`;
-                            const disabled = !canMutate || hasDraft || tablePending;
-                            const input = { tableId: table.id, itemId: item.id };
-                            const name = productDisplayName(item.name, hideVolume);
-                            const changesCoffeeStock = Boolean(
-                              isCoffee(item.productId) || session.duoMenu,
-                            );
-                            return (
-                              <div className="order-item" key={item.id} data-order-item={item.id}>
-                                <div className="order-item-name">
-                                  <strong>{name}</strong>
-                                  <small>{formatMoney(item.unitPriceCents)} / njësi</small>
-                                </div>
-                                <div className="order-item-controls">
-                                  {!employee ? (
-                                    <div className="quantity-control">
-                                      <Button
-                                        className="icon-button"
-                                        disabled={disabled || item.quantity === 1}
-                                        aria-label={`Ul sasinë e ${name}`}
-                                        onClick={() =>
-                                          run(
-                                            key,
-                                            () => window.fox.orders.decrementItem(input),
-                                            changesCoffeeStock,
-                                          )
-                                        }
-                                      >
-                                        <Icon name="minus" />
-                                      </Button>
-                                      <span data-order-quantity>{item.quantity}</span>
-                                      <Button
-                                        className="icon-button"
-                                        disabled={disabled}
-                                        aria-label={`Rrit sasinë e ${name}`}
-                                        onClick={() =>
-                                          run(
-                                            key,
-                                            () => window.fox.orders.incrementItem(input),
-                                            changesCoffeeStock,
-                                          )
-                                        }
-                                      >
-                                        <Icon name="plus" />
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <span data-order-quantity>{item.quantity}</span>
-                                  )}
-                                  <strong>{formatMoney(item.lineTotalCents)}</strong>
-                                  {!employee && (
-                                    <Button
-                                      variant="ghost"
-                                      className="icon-button remove-item"
-                                      disabled={disabled}
-                                      aria-label={`Hiq ${name}`}
-                                      onClick={() =>
-                                        run(
-                                          key,
-                                          () => window.fox.orders.removeItem(input),
-                                          changesCoffeeStock,
-                                        )
-                                      }
-                                    >
-                                      <Icon name="trash" />
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </section>
+                        <>
+                          <DataState error={catalog.error} retry={catalog.retry} />
+                          {savedOrder}
+                        </>
                       )}
                     </>
                   )}

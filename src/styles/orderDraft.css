@@ -1,8 +1,10 @@
 .order-draft {
-  display: grid;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
   gap: var(--space-2);
-  flex-shrink: 0;
   min-width: 0;
+  min-height: 0;
 }
 .order-draft .draft-categories {
   display: flex;
@@ -23,11 +25,73 @@
 .draft-search {
   background: var(--surface-muted);
 }
+.order-split {
+  display: grid;
+  flex: 1 1 0;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 56px;
+}
+.order-split[data-order-split='true'] {
+  grid-template-rows:
+    minmax(0, var(--order-catalog-share))
+    44px
+    minmax(0, var(--order-details-share));
+  min-height: 136px;
+}
+.order-split-catalog {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.order-split-details {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.order-split-handle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--secondary);
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+.order-split-handle::before,
+.order-split-handle::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border-strong);
+}
+.order-split-handle > span {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-muted);
+  font-weight: 700;
+}
+.order-split-handle:hover > span,
+.order-split-handle:active > span,
+.order-split-handle:focus-visible > span {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.order-split-handle:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
 .ops-products {
   display: grid;
+  flex: 1;
+  align-content: start;
   gap: var(--space-2);
-  max-height: 15rem;
   overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 .ops-product {
   display: flex;
@@ -97,9 +161,82 @@
   min-height: 0;
   overflow: visible;
 }
+[data-page='tables'] .order-split-details .current-order {
+  margin-top: 0;
+}
 [data-page='tables'] [data-order-draft] .order-footer[data-order-state='empty'] > div {
   color: var(--text);
 }
 [data-page='tables'] [data-order-draft] .order-footer[data-order-state='empty'] [data-order-total] {
   font-size: var(--font-value);
+}
+@media (max-height: 720px) {
+  [data-page='tables'] .order-draft .draft-categories {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    margin-bottom: 0;
+    scrollbar-width: thin;
+  }
+  [data-page='tables'] .order-draft .draft-categories .button {
+    flex: none;
+  }
+  [data-page='tables'] [data-order-draft] .order-footer {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-1) var(--space-2);
+  }
+  [data-page='tables'] [data-order-draft] .order-footer > :is(div, p) {
+    grid-column: 1 / -1;
+  }
+  [data-page='tables'] [data-order-draft] .order-footer .checkout-open {
+    min-height: 44px;
+    margin-top: 0;
+    padding-inline: var(--space-1);
+    gap: var(--space-1);
+    font-size: var(--font-table);
+    white-space: normal;
+  }
+  [data-page='tables'] [data-order-draft] .order-footer .checkout-open .icon {
+    width: 18px;
+    height: 18px;
+  }
+}
+@media (max-height: 650px) {
+  [data-page='tables'].pos-selected > .page-header {
+    display: none;
+  }
+  [data-page='tables'] [data-order-draft] {
+    position: relative;
+  }
+  [data-page='tables'] [data-order-draft] .order-header:has(+ .reservation-toolbar) > .button {
+    margin-inline-start: 44px;
+  }
+  [data-page='tables'] [data-order-draft] .reservation-toolbar {
+    position: absolute;
+    inset: 6px 56px auto auto;
+    padding: 0;
+    border: 0;
+  }
+  [data-page='tables'] [data-order-draft] .reservation-toolbar .button {
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+  [data-page='tables'] [data-order-draft] .reservation-toolbar .button > span {
+    display: none;
+  }
+  .ops-product > div:first-child {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 6px;
+    line-height: 1.2;
+  }
+  .ops-product p {
+    margin: 0;
+  }
+  .ops-product .order-stock {
+    flex-basis: 100%;
+    font-size: var(--font-meta);
+  }
 }

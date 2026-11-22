@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { CatalogProduct, Category, CategoryCode } from '../../domain/types';
 import type { OrderDraft } from '../../domain/orderDraft';
 import { productDisplayName } from '../../domain/display';
@@ -6,6 +6,7 @@ import { formatMoney } from '../../domain/money';
 import { drinkCategory, duoDrinkCategories } from '../../domain/hotDrinks';
 import { coffeeStockLabel } from '../../domain/operators';
 import { Button, Icon } from '../common/Controls';
+import { OrderPanelSplit } from './OrderPanelSplit';
 
 function productUnavailable(product: CatalogProduct) {
   if (!product.active) return 'Joaktiv';
@@ -41,6 +42,9 @@ export function OrderDraftEditor({
   onChange,
   disabled,
   subtotal,
+  savedOrder,
+  catalogShare,
+  onResize,
   showStock = false,
   hideVolume = false,
 }: {
@@ -50,6 +54,9 @@ export function OrderDraftEditor({
   onChange(update: (draft: OrderDraft) => OrderDraft): void;
   disabled: boolean;
   subtotal: number | null;
+  savedOrder?: ReactNode;
+  catalogShare: number;
+  onResize(share: number): void;
   showStock?: boolean;
   hideVolume?: boolean;
 }) {
@@ -153,141 +160,156 @@ export function OrderDraftEditor({
           Për porosi, vendos çmimet e shitjes dhe aktivizo produktet te Stoku.
         </p>
       )}
-      <div className="ops-products">
-        {visible.map((product) => {
-          const name = productDisplayName(product.name, hideVolume);
-          const line = lines.get(product.id);
-          const quantity = line?.quantity ?? 0;
-          const issue = line
-            ? draftLineIssue(line, product, categories)
-            : productUnavailable(product);
-          return (
-            <div className="ops-product" key={product.id}>
-              <div>
-                <strong>{name}</strong>
+      <OrderPanelSplit
+        catalogShare={catalogShare}
+        onResize={onResize}
+        catalog={
+          <div className="ops-products">
+            {visible.map((product) => {
+              const name = productDisplayName(product.name, hideVolume);
+              const line = lines.get(product.id);
+              const quantity = line?.quantity ?? 0;
+              const issue = line
+                ? draftLineIssue(line, product, categories)
+                : productUnavailable(product);
+              return (
+                <div className="ops-product" key={product.id}>
+                  <div>
+                    <strong>{name}</strong>
+                    <p>
+                      {product.sellingPriceCents === null
+                        ? 'Pa çmim'
+                        : formatMoney(product.sellingPriceCents)}
+                      {issue && issue !== 'Pa çmim' && (
+                        <span className="draft-product-issue">{issue}</span>
+                      )}
+                    </p>
+                    {showStock && (
+                      <p className="order-stock">
+                        {product.trackInventory && product.stockQuantity !== null
+                          ? `Stoku: ${product.coffeeRecipe ? coffeeStockLabel(product.stockQuantity) : product.stockQuantity}`
+                          : 'Stok pa numëruar'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="quantity-control">
+                    <Button
+                      className="icon-button"
+                      data-ops-remove={product.id}
+                      disabled={disabled || quantity === 0}
+                      aria-label={`Hiq një ${name}`}
+                      onClick={() => changeQuantity(product.id, -1)}
+                    >
+                      <Icon name="minus" />
+                    </Button>
+                    <span data-ops-quantity={product.id}>{quantity}</span>
+                    <Button
+                      className="icon-button"
+                      data-order-product={product.id}
+                      disabled={
+                        disabled ||
+                        !!issue ||
+                        quantity >= 999 ||
+                        (quantity === 0 && draft.items.length >= 100)
+                      }
+                      aria-label={`Shto një ${name}`}
+                      onClick={() => changeQuantity(product.id, 1)}
+                    >
+                      <Icon name="plus" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+            {!visible.length && (
+              <div className="order-category-empty">
                 <p>
-                  {product.sellingPriceCents === null
-                    ? 'Pa çmim'
-                    : formatMoney(product.sellingPriceCents)}
-                  {issue && issue !== 'Pa çmim' && (
-                    <span className="draft-product-issue">{issue}</span>
-                  )}
+                  {search
+                    ? 'Nuk u gjet asnjë produkt.'
+                    : selectedCategory
+                      ? 'Kjo kategori është bosh.'
+                      : 'Përgatit produktet te Stoku.'}
                 </p>
-                {showStock && (
-                  <p className="order-stock">
-                    {product.trackInventory && product.stockQuantity !== null
-                      ? `Stoku: ${product.coffeeRecipe ? coffeeStockLabel(product.stockQuantity) : product.stockQuantity}`
-                      : 'Stok pa numëruar'}
-                  </p>
+                {!search && selectedCategory && menu.length > 0 && (
+                  <Button onClick={() => setCategory('')}>Shiko të gjitha</Button>
                 )}
               </div>
-              <div className="quantity-control">
-                <Button
-                  className="icon-button"
-                  data-ops-remove={product.id}
-                  disabled={disabled || quantity === 0}
-                  aria-label={`Hiq një ${name}`}
-                  onClick={() => changeQuantity(product.id, -1)}
-                >
-                  <Icon name="minus" />
-                </Button>
-                <span data-ops-quantity={product.id}>{quantity}</span>
-                <Button
-                  className="icon-button"
-                  data-order-product={product.id}
-                  disabled={
-                    disabled ||
-                    !!issue ||
-                    quantity >= 999 ||
-                    (quantity === 0 && draft.items.length >= 100)
-                  }
-                  aria-label={`Shto një ${name}`}
-                  onClick={() => changeQuantity(product.id, 1)}
-                >
-                  <Icon name="plus" />
-                </Button>
-              </div>
-            </div>
-          );
-        })}
-        {!visible.length && (
-          <div className="order-category-empty">
-            <p>
-              {search
-                ? 'Nuk u gjet asnjë produkt.'
-                : selectedCategory
-                  ? 'Kjo kategori është bosh.'
-                  : 'Përgatit produktet te Stoku.'}
-            </p>
-            {!search && selectedCategory && menu.length > 0 && (
-              <Button onClick={() => setCategory('')}>Shiko të gjitha</Button>
             )}
           </div>
-        )}
-      </div>
-      {draft.items.length > 0 && (
-        <section className="draft-summary" aria-label="Drafti i porosisë">
-          <h3>Drafti · i paporositur</h3>
-          {draft.items.map((line) => {
-            const {
-              productId,
-              quantity,
-              expectedProduct: { name, unitPriceCents },
-            } = line;
-            const issue = draftLineIssue(
-              line,
-              products.find((product) => product.id === productId),
-              categories,
-            );
-            const total = quantity * unitPriceCents;
-            return (
-              <div className="draft-line" key={productId} data-draft-line={productId}>
-                <div className="draft-line-label">
-                  <strong>{name}</strong>
-                  <small>{formatMoney(unitPriceCents)} / njësi</small>
-                  {issue && <small>{issue}</small>}
-                </div>
-                <strong data-draft-line-total>
-                  {Number.isSafeInteger(total) ? formatMoney(total) : '—'}
-                </strong>
-                <div className="quantity-control">
-                  <Button
-                    className="icon-button"
-                    disabled={disabled}
-                    aria-label={`Ul sasinë e ${name} në draft`}
-                    onClick={() => changeQuantity(productId, -1)}
-                  >
-                    <Icon name="minus" />
-                  </Button>
-                  <span data-draft-quantity>{quantity}</span>
-                  <Button
-                    className="icon-button"
-                    disabled={disabled || !!issue || quantity >= 999}
-                    aria-label={`Rrit sasinë e ${name} në draft`}
-                    onClick={() => changeQuantity(productId, 1)}
-                  >
-                    <Icon name="plus" />
-                  </Button>
-                  <Button
-                    className="icon-button"
-                    variant="ghost"
-                    data-draft-remove
-                    disabled={disabled}
-                    aria-label={`Hiq ${name} nga drafti`}
-                    onClick={() => changeQuantity(productId, -quantity)}
-                  >
-                    <Icon name="trash" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-          <div className="draft-summary-total">
-            <span>Totali i draftit</span>
-            <strong data-draft-total>{subtotal === null ? '—' : formatMoney(subtotal)}</strong>
-          </div>
-        </section>
-      )}
+        }
+        details={
+          draft.items.length > 0 || savedOrder ? (
+            <>
+              {draft.items.length > 0 && (
+                <section className="draft-summary" aria-label="Drafti i porosisë">
+                  <h3>Drafti · i paporositur</h3>
+                  {draft.items.map((line) => {
+                    const {
+                      productId,
+                      quantity,
+                      expectedProduct: { name, unitPriceCents },
+                    } = line;
+                    const issue = draftLineIssue(
+                      line,
+                      products.find((product) => product.id === productId),
+                      categories,
+                    );
+                    const total = quantity * unitPriceCents;
+                    return (
+                      <div className="draft-line" key={productId} data-draft-line={productId}>
+                        <div className="draft-line-label">
+                          <strong>{name}</strong>
+                          <small>{formatMoney(unitPriceCents)} / njësi</small>
+                          {issue && <small>{issue}</small>}
+                        </div>
+                        <strong data-draft-line-total>
+                          {Number.isSafeInteger(total) ? formatMoney(total) : '—'}
+                        </strong>
+                        <div className="quantity-control">
+                          <Button
+                            className="icon-button"
+                            disabled={disabled}
+                            aria-label={`Ul sasinë e ${name} në draft`}
+                            onClick={() => changeQuantity(productId, -1)}
+                          >
+                            <Icon name="minus" />
+                          </Button>
+                          <span data-draft-quantity>{quantity}</span>
+                          <Button
+                            className="icon-button"
+                            disabled={disabled || !!issue || quantity >= 999}
+                            aria-label={`Rrit sasinë e ${name} në draft`}
+                            onClick={() => changeQuantity(productId, 1)}
+                          >
+                            <Icon name="plus" />
+                          </Button>
+                          <Button
+                            className="icon-button"
+                            variant="ghost"
+                            data-draft-remove
+                            disabled={disabled}
+                            aria-label={`Hiq ${name} nga drafti`}
+                            onClick={() => changeQuantity(productId, -quantity)}
+                          >
+                            <Icon name="trash" />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="draft-summary-total">
+                    <span>Totali i draftit</span>
+                    <strong data-draft-total>
+                      {subtotal === null ? '—' : formatMoney(subtotal)}
+                    </strong>
+                  </div>
+                </section>
+              )}
+              {savedOrder}
+            </>
+          ) : null
+        }
+      />
     </section>
   );
 }
